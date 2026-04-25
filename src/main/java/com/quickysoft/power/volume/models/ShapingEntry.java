@@ -14,73 +14,12 @@ import java.util.Set;
  * Uses {@link DayOfWeek} + time ranges instead of EPEX-specific block names,
  * so it works across markets (EPEX, Nord Pool, bilateral OTC with custom blocks).
  */
-public class ShapingEntry {
-
-    private Set<DayOfWeek> applicableDays;
-    private LocalTime blockStart;       // inclusive
-    private LocalTime blockEnd;         // exclusive
-    private BigDecimal volume;          // MW
-    private boolean appliesToHolidays;
-
-    // ── Optional: month range for seasonal shaping ──
-    private Month validFromMonth;       // null = all months
-    private Month validToMonth;
-
-    // ── Getters and Setters ──
-
-    public Set<DayOfWeek> getApplicableDays() {
-        return applicableDays;
-    }
-
-    public void setApplicableDays(Set<DayOfWeek> applicableDays) {
-        this.applicableDays = applicableDays;
-    }
-
-    public LocalTime getBlockStart() {
-        return blockStart;
-    }
-
-    public void setBlockStart(LocalTime blockStart) {
-        this.blockStart = blockStart;
-    }
-
-    public LocalTime getBlockEnd() {
-        return blockEnd;
-    }
-
-    public void setBlockEnd(LocalTime blockEnd) {
-        this.blockEnd = blockEnd;
-    }
-
-    public BigDecimal getVolume() {
-        return volume;
-    }
-
-    public void setVolume(BigDecimal volume) {
-        this.volume = volume;
-    }
-
-    public boolean isAppliesToHolidays() {
-        return appliesToHolidays;
-    }
-
-    public void setAppliesToHolidays(boolean appliesToHolidays) {
-        this.appliesToHolidays = appliesToHolidays;
-    }
-
-    public Month getValidFromMonth() {
-        return validFromMonth;
-    }
-
-    public void setValidFromMonth(Month validFromMonth) {
-        this.validFromMonth = validFromMonth;
-    }
-
-    public Month getValidToMonth() {
-        return validToMonth;
-    }
-
-    public void setValidToMonth(Month validToMonth) {
-        this.validToMonth = validToMonth;
-    }
-}
+public record ShapingEntry(
+        Set<DayOfWeek> applicableDays,
+        LocalTime blockStart,       // inclusive
+        LocalTime blockEnd,         // exclusive
+        BigDecimal volume,          // MW
+        boolean appliesToHolidays,
+        Month validFromMonth,       // null = all months
+        Month validToMonth
+) {}

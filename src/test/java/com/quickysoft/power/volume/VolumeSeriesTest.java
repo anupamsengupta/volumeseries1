@@ -81,8 +81,8 @@ class VolumeSeriesTest {
                     DELIVERY_TZ);
 
             VolumeInterval interval = series.getIntervals().get(0);
-            assertEquals(LocalTime.of(17, 45), interval.getIntervalStart().toLocalTime());
-            assertEquals(LocalTime.of(18, 0), interval.getIntervalEnd().toLocalTime());
+            assertEquals(LocalTime.of(17, 45), interval.intervalStart().toLocalTime());
+            assertEquals(LocalTime.of(18, 0), interval.intervalEnd().toLocalTime());
         }
 
         @Test
@@ -97,8 +97,8 @@ class VolumeSeriesTest {
                     DELIVERY_TZ);
 
             VolumeInterval interval = series.getIntervals().get(0);
-            assertEquals(VOLUME_MW, interval.getVolume());
-            assertEquals(VOLUME_MW, interval.getEnergy());
+            assertEquals(VOLUME_MW, interval.volume());
+            assertEquals(VOLUME_MW, interval.energy());
         }
 
         @Test
@@ -113,9 +113,9 @@ class VolumeSeriesTest {
                     DELIVERY_TZ);
 
             VolumeInterval interval = series.getIntervals().get(0);
-            assertEquals(VOLUME_MW, interval.getVolume());
+            assertEquals(VOLUME_MW, interval.volume());
             assertEquals(0, new BigDecimal("3.750000")
-                    .compareTo(interval.getEnergy()));
+                    .compareTo(interval.energy()));
         }
 
         @Test
@@ -131,7 +131,7 @@ class VolumeSeriesTest {
                     DELIVERY_TZ);
 
             assertEquals(MaterializationStatus.FULL, series.getMaterializationStatus());
-            assertEquals(IntervalStatus.CONFIRMED, series.getIntervals().get(0).getStatus());
+            assertEquals(IntervalStatus.CONFIRMED, series.getIntervals().get(0).status());
             assertNull(series.getUnmaterializedWindow(),
                     "Fully materialized series should have no unmaterialized window");
         }
@@ -176,12 +176,12 @@ class VolumeSeriesTest {
 
             List<VolumeInterval> intervals = series.getIntervals();
             for (int i = 0; i < intervals.size() - 1; i++) {
-                assertEquals(intervals.get(i).getIntervalEnd(),
-                        intervals.get(i + 1).getIntervalStart(),
+                assertEquals(intervals.get(i).intervalEnd(),
+                        intervals.get(i + 1).intervalStart(),
                         "Gap detected between interval " + i + " and " + (i + 1));
             }
-            assertEquals(start, intervals.get(0).getIntervalStart());
-            assertEquals(end, intervals.get(intervals.size() - 1).getIntervalEnd());
+            assertEquals(start, intervals.get(0).intervalStart());
+            assertEquals(end, intervals.get(intervals.size() - 1).intervalEnd());
         }
 
         @Test
@@ -200,7 +200,7 @@ class VolumeSeriesTest {
                     LocalTime.of(17, 45));
 
             List<LocalTime> actualStarts = series.getIntervals().stream()
-                    .map(i -> i.getIntervalStart().toLocalTime())
+                    .map(i -> i.intervalStart().toLocalTime())
                     .toList();
 
             assertEquals(expectedStarts, actualStarts);
@@ -217,7 +217,7 @@ class VolumeSeriesTest {
 
             series.getIntervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("3.750000")
-                            .compareTo(interval.getEnergy()),
+                            .compareTo(interval.energy()),
                             "Each interval should be 3.75 MWh"));
 
             assertEquals(0, new BigDecimal("15")
@@ -235,7 +235,7 @@ class VolumeSeriesTest {
                     DELIVERY_TZ);
 
             series.getIntervals().forEach(interval ->
-                    assertEquals(YearMonth.of(2026, 4), interval.getChunkMonth()));
+                    assertEquals(YearMonth.of(2026, 4), interval.chunkMonth()));
         }
     }
 
@@ -276,14 +276,14 @@ class VolumeSeriesTest {
 
             List<VolumeInterval> intervals = series.getIntervals();
 
-            assertEquals(LocalTime.of(17, 0), intervals.get(0).getIntervalStart().toLocalTime());
-            assertEquals(LocalTime.of(17, 30), intervals.get(0).getIntervalEnd().toLocalTime());
+            assertEquals(LocalTime.of(17, 0), intervals.get(0).intervalStart().toLocalTime());
+            assertEquals(LocalTime.of(17, 30), intervals.get(0).intervalEnd().toLocalTime());
 
-            assertEquals(LocalTime.of(17, 30), intervals.get(1).getIntervalStart().toLocalTime());
-            assertEquals(LocalTime.of(18, 0), intervals.get(1).getIntervalEnd().toLocalTime());
+            assertEquals(LocalTime.of(17, 30), intervals.get(1).intervalStart().toLocalTime());
+            assertEquals(LocalTime.of(18, 0), intervals.get(1).intervalEnd().toLocalTime());
 
-            assertEquals(LocalTime.of(18, 0), intervals.get(2).getIntervalStart().toLocalTime());
-            assertEquals(LocalTime.of(18, 30), intervals.get(2).getIntervalEnd().toLocalTime());
+            assertEquals(LocalTime.of(18, 0), intervals.get(2).intervalStart().toLocalTime());
+            assertEquals(LocalTime.of(18, 30), intervals.get(2).intervalEnd().toLocalTime());
         }
 
         @Test
@@ -297,7 +297,7 @@ class VolumeSeriesTest {
 
             series.getIntervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("7.500000")
-                            .compareTo(interval.getEnergy())));
+                            .compareTo(interval.energy())));
 
             BigDecimal expectedTotal = new BigDecimal("22.50");
             assertEquals(0, expectedTotal.compareTo(
@@ -315,7 +315,7 @@ class VolumeSeriesTest {
 
             series.getIntervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("15")
-                            .compareTo(interval.getEnergy())));
+                            .compareTo(interval.energy())));
 
             BigDecimal expectedTotal = new BigDecimal("45.0");
             assertEquals(0, expectedTotal.compareTo(
@@ -387,7 +387,7 @@ class VolumeSeriesTest {
 
             series.getIntervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("7.500000")
-                            .compareTo(interval.getEnergy())));
+                            .compareTo(interval.energy())));
         }
     }
 
@@ -435,12 +435,12 @@ class VolumeSeriesTest {
                     DELIVERY_TZ);
 
             List<VolumeInterval> intervals = series.getIntervals();
-            assertEquals(start, intervals.get(0).getIntervalStart());
-            assertEquals(end, intervals.get(intervals.size() - 1).getIntervalEnd());
+            assertEquals(start, intervals.get(0).intervalStart());
+            assertEquals(end, intervals.get(intervals.size() - 1).intervalEnd());
 
             for (int i = 0; i < intervals.size() - 1; i++) {
-                assertEquals(intervals.get(i).getIntervalEnd(),
-                        intervals.get(i + 1).getIntervalStart(),
+                assertEquals(intervals.get(i).intervalEnd(),
+                        intervals.get(i + 1).intervalStart(),
                         "Gap at interval " + i);
             }
         }
@@ -555,7 +555,7 @@ class VolumeSeriesTest {
 
             var byChunk = series.getIntervals().stream()
                     .collect(Collectors.groupingBy(
-                            VolumeInterval::getChunkMonth,
+                            VolumeInterval::chunkMonth,
                             Collectors.counting()));
 
             // Apr 2026 (partial) through Apr 2027 (partial) = 13 months
@@ -587,18 +587,16 @@ class VolumeSeriesTest {
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            VolumeFormula formula = new VolumeFormula();
-            formula.setId(UUID.randomUUID());
-            formula.setSeriesId(series.getId());
-            formula.setBaseVolume(VOLUME_MW);
-            formula.setMinVolume(new BigDecimal("12"));
-            formula.setMaxVolume(new BigDecimal("18"));
+            VolumeFormula formula = new VolumeFormula(
+                    UUID.randomUUID(), series.getId(),
+                    VOLUME_MW, new BigDecimal("12"), new BigDecimal("18"),
+                    null, null, null, null, null);
             series.setFormula(formula);
 
             assertNotNull(series.getFormula());
-            assertEquals(VOLUME_MW, series.getFormula().getBaseVolume());
-            assertEquals(new BigDecimal("12"), series.getFormula().getMinVolume());
-            assertEquals(new BigDecimal("18"), series.getFormula().getMaxVolume());
+            assertEquals(VOLUME_MW, series.getFormula().baseVolume());
+            assertEquals(new BigDecimal("12"), series.getFormula().minVolume());
+            assertEquals(new BigDecimal("18"), series.getFormula().maxVolume());
         }
 
         @Test

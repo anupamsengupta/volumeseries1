@@ -111,16 +111,12 @@ public class VolumeSeriesService {
                 cachedYear = year;
             }
 
-            VolumeInterval interval = new VolumeInterval();
-            interval.setId(UUID.randomUUID());
-            interval.setIntervalStart(intervalStart);
-            interval.setIntervalEnd(intervalEnd);
-            interval.setVolume(volume);
-            interval.setEnergy(precomputedEnergy);
-            interval.setStatus(IntervalStatus.CONFIRMED);
-            interval.setChunkMonth(cachedChunkMonth);
+            intervals.add(new VolumeInterval(
+                    UUID.randomUUID(), null,
+                    intervalStart, intervalEnd,
+                    volume, precomputedEnergy,
+                    IntervalStatus.CONFIRMED, cachedChunkMonth));
 
-            intervals.add(interval);
             cursor = intervalEndInstant;
         }
         return intervals;
@@ -141,16 +137,23 @@ public class VolumeSeriesService {
                 intervalEnd = end;
             }
 
-            VolumeInterval interval = new VolumeInterval();
-            interval.setId(UUID.randomUUID());
-            interval.setIntervalStart(cursor);
-            interval.setIntervalEnd(intervalEnd);
-            interval.setVolume(volume);
-            interval.setEnergy(interval.calculateEnergy(volumeUnit));
-            interval.setStatus(IntervalStatus.CONFIRMED);
-            interval.setChunkMonth(YearMonth.from(cursor));
+            // For MONTHLY, each interval has variable duration — compute energy individually
+            BigDecimal energy;
+            if (volumeUnit == VolumeUnit.MWH_PER_PERIOD) {
+                energy = volume;
+            } else {
+                long seconds = Duration.between(cursor.toInstant(), intervalEnd.toInstant()).getSeconds();
+                BigDecimal hours = BigDecimal.valueOf(seconds)
+                        .divide(SECONDS_PER_HOUR, 20, RoundingMode.HALF_UP);
+                energy = volume.multiply(hours).setScale(6, RoundingMode.HALF_UP);
+            }
 
-            intervals.add(interval);
+            intervals.add(new VolumeInterval(
+                    UUID.randomUUID(), null,
+                    cursor, intervalEnd,
+                    volume, energy,
+                    IntervalStatus.CONFIRMED, YearMonth.from(cursor)));
+
             cursor = intervalEnd;
         }
         return intervals;
@@ -158,7 +161,7 @@ public class VolumeSeriesService {
 
     public BigDecimal totalEnergy(VolumeSeries series) {
         BigDecimal result = series.getIntervals().stream()
-                .map(VolumeInterval::getEnergy)
+                .map(VolumeInterval::energy)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         result = result.setScale(6, RoundingMode.HALF_UP);
         return result;
