@@ -86,8 +86,8 @@ class VolumeSeriesTest {
         }
 
         @Test
-        @DisplayName("Energy should be 15 MW x 0.25h = 3.75 MWh")
-        void shouldCalculateCorrectEnergy() {
+        @DisplayName("Energy should be 15 MW x 1h = 15 MWh")
+        void shouldCalculateCorrectEnergyPerPeriod() {
             VolumeSeries series = volumeSeriesService.buildSeries(
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW,
@@ -99,8 +99,23 @@ class VolumeSeriesTest {
             VolumeInterval interval = series.getIntervals().get(0);
             assertEquals(VOLUME_MW, interval.getVolume());
             assertEquals(VOLUME_MW, interval.getEnergy());
-            /*assertEquals(0, new BigDecimal("3.750000")
-                    .compareTo(interval.getEnergy()));*/
+        }
+
+        @Test
+        @DisplayName("Energy should be 15 MW x .25h = 3.75 MWh")
+        void shouldCalculateCorrectEnergyHourlyBasis() {
+            VolumeSeries series = volumeSeriesService.buildSeries(
+                    start, end, TimeGranularity.MIN_15,
+                    VOLUME_MW,
+                    ProfileType.BLOCK,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MW_CAPACITY,
+                    DELIVERY_TZ);
+
+            VolumeInterval interval = series.getIntervals().get(0);
+            assertEquals(VOLUME_MW, interval.getVolume());
+            assertEquals(0, new BigDecimal("3.750000")
+                    .compareTo(interval.getEnergy()));
         }
 
         @Test
