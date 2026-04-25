@@ -1,0 +1,46 @@
+# Maven
+target/
+*.jar
+*.war
+*.ear
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+.idea/*.xml
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*.swo
+*~
+.factorypath
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# Docker
+.docker/
+
+# Kubernetes secrets
+k8s/**/secret*.yml
+k8s/**/secret*.yaml
+!k8s/**/secret-template*.yml
+!k8s/**/secret-template*.yaml
+
+# Plan files
+_plan/
