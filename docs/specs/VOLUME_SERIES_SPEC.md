@@ -74,8 +74,10 @@ Defines the interval width for delivery schedule decomposition.
 | `MIN_15` | 15 minutes | Yes | EPEX SPOT standard, XBID |
 | `MIN_30` | 30 minutes | Yes | UK market (ELEXON), some OTC |
 | `HOURLY` | 60 minutes | Yes | DA auction, bilateral OTC |
-| `DAILY` | 1 day | Yes | Settlement period granularity |
+| `DAILY` | 1 day | Nominal | Settlement period granularity; see note below |
 | `MONTHLY` | Variable | No | Forward contracts, PPAs |
+
+`DAILY` uses a nominal fixed duration of `Duration.ofDays(1)` (24 hours). On DST transition days the actual wall-clock day is 23 or 25 hours. Because `isSubDaily()` returns `false` for `DAILY`, the materialization loop steps by a fixed 24-hour `Duration` rather than using DST-aware `ZonedDateTime` day arithmetic. This means `DAILY` granularity should **not** be used for energy-critical settlement where DST-day accuracy matters — use sub-daily granularities (`MIN_15`, `HOURLY`, etc.) instead, which correctly handle DST via `ZonedDateTime.plus(Duration)`. The `calculateEnergy()` method on `VolumeInterval` always uses `Instant`-based elapsed time, so energy values remain correct even for `DAILY` intervals that land on DST transition days; only the interval boundary alignment is affected.
 
 `MONTHLY` has variable duration (28–31 days) and throws `UnsupportedOperationException` from `getFixedDuration()`. Callers must use `YearMonth` arithmetic instead.
 
@@ -103,6 +105,17 @@ Tracks the two-tier materialization state of the volume series.
 | `FULL` | All intervals generated | null |
 | `FAILED` | Generation failed, awaiting DLQ retry | null |
 
+#### 3.2.5 VolumeUnit
+
+Defines how the `volume` field on `VolumeInterval` is interpreted. EU power markets use both conventions depending on product type.
+
+| Value | Meaning | Energy Derivation |
+|---|---|---|
+| `MW_CAPACITY` | Volume represents power capacity in MW | `energy = volume × elapsed hours` |
+| `MWH_PER_PERIOD` | Volume represents energy delivered per period in MWh | `energy = volume` (regardless of interval duration) |
+
+`MW_CAPACITY` is the standard for exchange-traded DA/ID products (EPEX SPOT, Nord Pool, EEX). `MWH_PER_PERIOD` is used in some bilateral PPAs, tolerance band settlements, and generation-following contracts where the forecast provides MWh per interval directly.
+
 #### 3.2.4 IntervalStatus
 
 | Value | Meaning |
@@ -124,6 +137,7 @@ Root aggregate. One trade version has exactly one `VolumeSeries`.
 | `tradeId` | `UUID` | FK to parent trade |
 | `tradeLegId` | `UUID` | FK to parent trade leg |
 | `tradeVersion` | `int` | Trade version (optimistic lock) |
+| `volumeUnit` | `VolumeUnit` | How to interpret volume on intervals (MW capacity vs MWh per period) |
 | `deliveryStart` | `ZonedDateTime` | Start of delivery window (inclusive) |
 | `deliveryEnd` | `ZonedDateTime` | End of delivery window (exclusive) |
 | `deliveryTimezone` | `ZoneId` | Delivery timezone (e.g., `Europe/Berlin`) |
@@ -153,21 +167,31 @@ Single delivery interval within the materialized series.
 | `seriesId` | `UUID` | FK to parent VolumeSeries |
 | `intervalStart` | `ZonedDateTime` | Start (inclusive), in delivery timezone |
 | `intervalEnd` | `ZonedDateTime` | End (exclusive), in delivery timezone |
-| `volume` | `BigDecimal` | Power capacity in MW |
-| `energy` | `BigDecimal` | Derived: MWh = MW × hours elapsed |
+| `volume` | `BigDecimal` | Volume value; interpretation depends on parent series `volumeUnit` |
+| `energy` | `BigDecimal` | Derived MWh (see `calculateEnergy`) |
 | `status` | `IntervalStatus` | Lifecycle status |
 | `chunkMonth` | `YearMonth` | Which materialization chunk produced this |
 
 **Key Methods:**
 
-- `calculateEnergy()`: Derives energy (MWh) from volume (MW) and actual elapsed duration. Uses `Instant`-based arithmetic (`intervalStart.toInstant()` to `intervalEnd.toInstant()`) to correctly handle DST transitions. This is critical: a naive `volume × 1 hour` calculation produces wrong energy values on the two DST transition days per year.
+- `calculateEnergy(VolumeUnit volumeUnit)`: Derives energy (MWh) based on the `VolumeUnit` mode:
+  - **`MW_CAPACITY`**: Derives energy from volume (MW) and actual elapsed duration. Uses `Instant`-based arithmetic (`intervalStart.toInstant()` to `intervalEnd.toInstant()`) to correctly handle DST transitions. This is critical: a naive `volume × 1 hour` calculation produces wrong energy values on the two DST transition days per year.
+  - **`MWH_PER_PERIOD`**: Returns the volume value directly (it already represents MWh).
 
-**Energy Calculation Formula:**
+**Energy Calculation Formula (MW_CAPACITY mode):**
 
 ```
 seconds = Duration.between(intervalStart.toInstant(), intervalEnd.toInstant()).getSeconds()
-hours = seconds / 3600 (scale 6, HALF_UP)
-energy = volume × hours
+hours = seconds / 3600 (high intermediate precision, HALF_UP)
+energy = (volume × hours).setScale(6, HALF_UP)
+```
+
+The intermediate hours division uses high precision (scale 20) to avoid rounding drift when summing many short intervals (e.g., 12 five-minute intervals must produce the same total energy as 1 hourly interval). The final energy result is rounded to scale 6.
+
+**Energy Calculation (MWH_PER_PERIOD mode):**
+
+```
+energy = volume
 ```
 
 #### 3.3.3 VolumeFormula
@@ -355,13 +379,21 @@ intervals[last].intervalEnd == series.deliveryEnd (or materializedEnd for PARTIA
 
 For a given `(deliveryStart, deliveryEnd, granularity, deliveryTimezone)`, the expected interval count is deterministic and reproducible. `calculateExpectedIntervals()` must return the same value every time.
 
-### 6.4 Energy = Volume × Actual Elapsed Hours
+### 6.4 Energy Derivation
+
+For `MW_CAPACITY` volume unit:
 
 ```
 interval.energy == interval.volume × (elapsed seconds / 3600)
 ```
 
 This uses actual elapsed time (Instant-based), not nominal wall-clock time.
+
+For `MWH_PER_PERIOD` volume unit:
+
+```
+interval.energy == interval.volume
+```
 
 ### 6.5 Bi-Temporal Completeness
 
@@ -492,7 +524,7 @@ VolumeSeriesTest
 - 100 intervals for the day (not 96)
 - Energy: **375 MWh** (not 360)
 
-**DST spring-forward (29 Mar 2027):**
+**DST spring-forward (28 Mar 2027):**
 
 - 92 intervals for the day (not 96)
 - Energy: **345 MWh** (not 360)
@@ -514,19 +546,19 @@ VolumeSeriesTest
 
 | Test | Assertion |
 |---|---|
-| Energy invariant across granularities | 5-min, 15-min, 30-min, hourly all produce 15 MWh for 17:00–18:00 at 15 MW |
+| Energy invariant across granularities | 5-min, 15-min, 30-min, hourly all produce 15 MWh for 17:00–18:00 at 15 MW (`MW_CAPACITY` mode) |
 | Interval count scaling | 12, 4, 2, 1 intervals for 5-min, 15-min, 30-min, hourly respectively |
 | Bi-temporal timestamps | Both `transactionTime` and `validTime` are non-null |
 | MONTHLY guard | `TimeGranularity.MONTHLY.getFixedDuration()` throws `UnsupportedOperationException` |
 | DeliveryWindow validation | Constructor rejects `end` before `start` with `IllegalArgumentException` |
 
-### 7.4 Test Helpers
+### 7.4 VolumeSeriesService
 
-The test class provides two reusable helper methods:
+The `VolumeSeriesService` (singleton, `com.quickysoft.power.volume.service`) provides reusable methods for building and querying volume series. These are used by both the test suite and the materialization pipeline.
 
-- `buildSeries(start, end, granularity, volume, profileType, matStatus)`: Constructs a `VolumeSeries` with fully materialized intervals. Handles all granularities including `MONTHLY`.
-- `materializeIntervals(start, end, granularity, volume)`: Walks the timeline and produces `VolumeInterval` objects with calculated energy and chunk month assignment.
-- `totalEnergy(series)`: Sums energy across all intervals in a series.
+- `buildSeries(start, end, granularity, volume, profileType, matStatus, volumeUnit, zoneId)`: Constructs a `VolumeSeries` with fully materialized intervals. Handles all granularities including `MONTHLY`. Sets bi-temporal timestamps and calculates expected interval count.
+- `materializeIntervals(start, end, granularity, volume, volumeUnit)`: Walks the timeline and produces `VolumeInterval` objects with calculated energy and chunk month assignment.
+- `totalEnergy(series)`: Sums energy across all intervals in a series, rounded to scale 6.
 
 ---
 
