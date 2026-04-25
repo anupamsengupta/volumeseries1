@@ -288,7 +288,7 @@ class VolumeSeriesTest {
 
         @Test
         @DisplayName("Each interval energy = 7.50 MWh, total = 22.50 MWh")
-        void shouldCalculateCorrectEnergy() {
+        void shouldCalculateCorrectEnergyPerHour() {
             VolumeSeries series = volumeSeriesService.buildSeries(
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
@@ -302,6 +302,24 @@ class VolumeSeriesTest {
             BigDecimal expectedTotal = new BigDecimal("22.50");
             assertEquals(0, expectedTotal.compareTo(
                      volumeSeriesService.totalEnergy(series).setScale(2, RoundingMode.HALF_UP)));
+        }
+
+        @Test
+        @DisplayName("Each interval energy = 15 MWh, total = 45 MWh")
+        void shouldCalculateCorrectEnergyPerPeriod() {
+            VolumeSeries series = volumeSeriesService.buildSeries(
+                    start, end, TimeGranularity.MIN_30,
+                    VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ);
+
+            series.getIntervals().forEach(interval ->
+                    assertEquals(0, new BigDecimal("15")
+                            .compareTo(interval.getEnergy())));
+
+            BigDecimal expectedTotal = new BigDecimal("45.0");
+            assertEquals(0, expectedTotal.compareTo(
+                    volumeSeriesService.totalEnergy(series).setScale(2, RoundingMode.HALF_UP)));
         }
     }
 
@@ -703,8 +721,8 @@ class VolumeSeriesTest {
         @Test
         @DisplayName("DeliveryWindow should reject end before start")
         void deliveryWindowShouldRejectInvalidRange() {
-            ZonedDateTime later = ZonedDateTime.of(2026, 4, 25, 0, 0, 0, 0, DELIVERY_TZ);
             ZonedDateTime earlier = ZonedDateTime.of(2026, 4, 24, 0, 0, 0, 0, DELIVERY_TZ);
+            ZonedDateTime later = ZonedDateTime.of(2026, 4, 25, 0, 0, 0, 0, DELIVERY_TZ);
 
             assertThrows(IllegalArgumentException.class,
                     () -> new DeliveryWindow(later, earlier),
