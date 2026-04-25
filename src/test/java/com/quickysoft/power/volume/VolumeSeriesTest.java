@@ -473,7 +473,7 @@ class VolumeSeriesTest {
             VolumeSeries dstDaySeries = volumeSeriesService.buildSeries(
                     dstDayStart, dstDayEnd, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
-                    VolumeUnit.MWH_PER_PERIOD,
+                    VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
             assertEquals(100, dstDaySeries.getIntervals().size(),
@@ -486,17 +486,17 @@ class VolumeSeriesTest {
         }
 
         @Test
-        @DisplayName("DST spring-forward (Mar 29 2027): 23-hour day produces 92 intervals")
+        @DisplayName("DST spring-forward (Mar 28 2027): 23-hour day produces 92 intervals")
         void shouldHandleDstSpringForward() {
             ZonedDateTime dstDayStart =
-                    ZonedDateTime.of(2027, 3, 29, 0, 0, 0, 0, DELIVERY_TZ);
+                    ZonedDateTime.of(2027, 3, 28, 0, 0, 0, 0, DELIVERY_TZ);
             ZonedDateTime dstDayEnd =
-                    ZonedDateTime.of(2027, 3, 30, 0, 0, 0, 0, DELIVERY_TZ);
+                    ZonedDateTime.of(2027, 3, 29, 0, 0, 0, 0, DELIVERY_TZ);
 
             VolumeSeries dstDaySeries = volumeSeriesService.buildSeries(
                     dstDayStart, dstDayEnd, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
-                    VolumeUnit.MWH_PER_PERIOD,
+                    VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
             assertEquals(92, dstDaySeries.getIntervals().size(),

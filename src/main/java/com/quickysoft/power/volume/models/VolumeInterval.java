@@ -60,7 +60,7 @@ public class VolumeInterval {
                 intervalEnd.toInstant()).getSeconds();
         BigDecimal hours = BigDecimal.valueOf(seconds)
                 .divide(BigDecimal.valueOf(3600), 20, RoundingMode.HALF_UP);
-        return volume.multiply(hours);
+        return volume.multiply(hours).setScale(6, RoundingMode.HALF_UP);
     }
 
     // ── Getters and Setters ──

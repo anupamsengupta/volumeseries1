@@ -102,6 +102,14 @@ public class VolumeSeries {
 
     // ── Getters and Setters ──
 
+    public VolumeUnit getVolumeUnit() {
+        return volumeUnit;
+    }
+
+    public void setVolumeUnit(VolumeUnit volumeUnit) {
+        this.volumeUnit = volumeUnit;
+    }
+
     public UUID getId() {
         return id;
     }
