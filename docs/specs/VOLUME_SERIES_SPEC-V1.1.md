@@ -776,15 +776,44 @@ DA auction results arrive as a batch — a single counterparty may receive 50–
 | PPA full year (background) | 1 trade, ~35,040 intervals | ~35,040 | ≤ 5 sec | ≤ 10 sec | Full materialization if triggered |
 | PPA 10-year (background) | 1 trade, ~350,400 intervals | ~350,400 | ≤ 30 sec | ≤ 60 sec | Worst-case long-tenor |
 
+**Cascade Detail Generation SLAs** (Section 4.5 — multi-granularity cascade):
+
+With the cascade model, the trade capture response path only generates the near-term tier upfront (~288 intervals at base granularity for a 3-day week remainder). This is **constant regardless of PPA tenor**. Medium and long-term tiers are background Kafka jobs.
+
+| Scenario | Operation | Intervals | Target (p95) | Target (p99) | Notes |
+|---|---|---|---|---|---|
+| Any PPA (6mo–10yr) | `buildCascadeSeries` (upfront, blocking) | ~288 near-term | ≤ 5 ms | ≤ 10 ms | Trader wait time; identical for all tenors |
+| 6-month PPA | Medium-term background | ~91 daily | ≤ 50 ms | ≤ 100 ms | 3 monthly Kafka chunks |
+| 6-month PPA | Long-term background | 3 monthly | ≤ 5 ms | ≤ 10 ms | 3 Kafka chunks |
+| 1-year PPA | Long-term background | 9 monthly | ≤ 10 ms | ≤ 20 ms | 9 Kafka chunks |
+| 3-year PPA | Long-term background | 33 monthly | ≤ 20 ms | ≤ 50 ms | 33 Kafka chunks |
+| 6-year PPA | Long-term background | 69 monthly | ≤ 30 ms | ≤ 75 ms | 69 Kafka chunks |
+| 10-year PPA | Long-term background | 117 monthly | ≤ 50 ms | ≤ 100 ms | 117 Kafka chunks |
+| Per chunk | `materializeMediumTermChunk` | ~28–31 daily | ≤ 1 ms | ≤ 2 ms | Single Kafka message |
+| Per chunk | `materializeLongTermChunk` | 1 monthly | ≤ 0.5 ms | ≤ 1 ms | Single Kafka message |
+| Weekly cron | `disaggregateMonthlyToDaily` | 1 monthly → ~30 daily | ≤ 2 ms | ≤ 5 ms | Rolling window advance |
+| Weekly cron | `disaggregateDailyToBase` | 7 daily → ~672 base | ≤ 10 ms | ≤ 20 ms | Near-term window extension |
+
+**End-to-End Cascade SLAs** (including Kafka + DB I/O):
+
+| Scenario | Phase | Target (p95) | Target (p99) | Notes |
+|---|---|---|---|---|
+| Any PPA (6mo–10yr) | Trade capture → near-term position-ready | ≤ 500 ms | ≤ 1 sec | Trader's blocking wait |
+| 6-month PPA | Full background completion (all 3 tiers FULL) | ≤ 5 sec | ≤ 10 sec | ~97 total chunks |
+| 1-year PPA | Full background completion | ≤ 10 sec | ≤ 20 sec | ~100 total chunks |
+| 3-year PPA | Full background completion | ≤ 20 sec | ≤ 40 sec | ~124 total chunks |
+| 6-year PPA | Full background completion | ≤ 35 sec | ≤ 60 sec | ~160 total chunks |
+| 10-year PPA | Full background completion | ≤ 50 sec | ≤ 90 sec | ~208 total chunks |
+
 #### 11.2.2 Core Domain Operation SLAs
 
 These are the pure computation targets, excluding I/O (Kafka, database). These are what the JMH benchmarks measure.
 
 | Operation | Input Scale | Target (p50) | Target (p95) | Target (p99) |
 |---|---|---|---|---|
-| `calculateExpectedIntervals()` — DA | 96 intervals | ≤ 5 μs | ≤ 10 μs | ≤ 20 μs |
-| `calculateExpectedIntervals()` — 1 year | ~35,040 intervals | ≤ 500 μs | ≤ 1 ms | ≤ 2 ms |
-| `calculateExpectedIntervals()` — 10 years | ~350,400 intervals | ≤ 5 ms | ≤ 10 ms | ≤ 20 ms |
+| `calculateExpectedIntervals()` — sub-daily (any tenor) | O(1) arithmetic | ≤ 100 ns | ≤ 200 ns | ≤ 500 ns |
+| `calculateExpectedIntervals()` — DAILY | O(1) ChronoUnit | ≤ 100 ns | ≤ 200 ns | ≤ 500 ns |
+| `calculateExpectedIntervals()` — MONTHLY | O(1) ChronoUnit | ≤ 100 ns | ≤ 200 ns | ≤ 500 ns |
 | `calculateEnergy()` — single interval | 1 interval | ≤ 200 ns | ≤ 500 ns | ≤ 1 μs |
 | `materializeIntervals()` — DA (96) | 96 intervals | ≤ 50 μs | ≤ 100 μs | ≤ 200 μs |
 | `materializeIntervals()` — 1 month (2,976) | 2,976 intervals | ≤ 1 ms | ≤ 2 ms | ≤ 5 ms |
@@ -1218,11 +1247,14 @@ Each load test run must produce:
 
 The benchmarks and load tests will surface optimization opportunities. The following are pre-identified candidates based on the domain model design:
 
-### 14.1 `calculateExpectedIntervals()` — O(n) Timeline Walk
+### 14.1 `calculateExpectedIntervals()` — O(1) Arithmetic ✅ IMPLEMENTED
 
-**Current:** Walks the timeline step-by-step, O(n) where n = interval count.
-**Optimization:** Arithmetic calculation with DST correction: `totalMinutes / granularityMinutes ± dstAdjustment`. The DST adjustment can be computed from `ZoneRules.getTransitions()` for the delivery timezone within the delivery window.
-**Trigger:** Benchmark shows > 5 ms for 10-year PPA.
+**Previous:** O(n) timeline walk stepping through every interval.
+**Implemented:** O(1) arithmetic for all granularities:
+- Sub-daily (fixed duration): `Duration.between(start.toInstant(), end.toInstant()).getSeconds() / fixedDuration.getSeconds()`. This is exact because the materialization loop uses `Instant.plusSeconds()`, so DST does not affect interval count.
+- DAILY: `ChronoUnit.DAYS.between(start.toLocalDate(), end.toLocalDate())`
+- MONTHLY: `ChronoUnit.MONTHS.between(YearMonth.from(start), YearMonth.from(end))`
+**Impact:** ~100 ns regardless of tenor (was ~5 ms for 10-year PPA).
 
 ### 14.2 `BigDecimal.divide()` in `calculateEnergy()`
 
@@ -1230,19 +1262,25 @@ The benchmarks and load tests will surface optimization opportunities. The follo
 **Optimization:** Pre-compute duration-in-hours as a `BigDecimal` constant per granularity (e.g., `MIN_15` → `0.25`, `MIN_30` → `0.50`) and use multiplication only. Only fall back to `Duration`-based calculation for DST-crossing intervals.
 **Trigger:** Benchmark shows `calculateEnergy()` > 500 ns at p95.
 
-### 14.3 Object Allocation in Materialization Loop
+### 14.3 UUID Generation in Materialization Loop ✅ IMPLEMENTED
 
-**Current:** Each interval allocates a new `UUID`, two `ZonedDateTime` objects, two `BigDecimal` objects, and a `YearMonth`.
-**Optimization:** Use an object pool for `VolumeInterval` instances, or switch to a columnar representation (parallel arrays of `long[]` for timestamps, `double[]` for volume/energy) for in-memory processing, materializing to objects only at persistence time.
+**Previous:** `UUID.randomUUID()` per interval uses `SecureRandom` — acquires a lock, reads system entropy (~1–3 μs per call). For 350,400 intervals this was 350–1,050 ms.
+**Implemented:** `FastUUID.generate()` uses `ThreadLocalRandom` — no lock, no system entropy (~50 ns per call). Valid RFC 4122 v4 UUIDs, suitable for domain identifiers where cryptographic randomness is unnecessary.
+**Impact:** 20–60× faster UUID generation; total UUID cost for 10-year PPA drops from ~700 ms to ~18 ms.
+
+### 14.4 Object Allocation in Materialization Loop
+
+**Current:** Each interval allocates two `ZonedDateTime` objects (via `cursor.atZone(zone)`), two `BigDecimal` references (shared for fixed-duration), and a `YearMonth` (cached for sub-daily).
+**Optimization:** Cache `ZoneOffset` and only recompute on DST transitions (~2 per year). Or switch to a columnar representation (parallel arrays of `long[]` for timestamps, `double[]` for volume/energy) for in-memory processing, materializing to objects only at persistence time.
 **Trigger:** GC profiler shows > 500 MB/sec allocation rate during year-scale materialization.
 
-### 14.4 Batch Persistence Strategy
+### 14.5 Batch Persistence Strategy
 
 **Current:** JDBC batch insert with configurable batch size.
 **Optimization:** Use PostgreSQL `COPY` command for bulk loads > 10,000 rows. For Aurora, use the Data API batch execute with `ARRAY` types for columnar insert.
 **Trigger:** Load test shows JDBC batch insert > 2 sec for 35,000 rows.
 
-### 14.5 Kafka Payload Size
+### 14.6 Kafka Payload Size
 
 **Current:** Full `VolumeSeries` including intervals in Kafka event payload.
 **Optimization:** Claim Check pattern — persist intervals to database first, publish only metadata (trade ID, version, interval count, materialization status) in the Kafka event. Consumer fetches intervals from database.

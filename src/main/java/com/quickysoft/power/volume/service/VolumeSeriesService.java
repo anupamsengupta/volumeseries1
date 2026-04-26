@@ -12,7 +12,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
+import static com.quickysoft.power.volume.service.FastUUID.generate;
 
 public class VolumeSeriesService {
 
@@ -27,7 +27,11 @@ public class VolumeSeriesService {
 
     /**
      * Calculate expected interval count for a delivery window and granularity.
-     * Uses ZonedDateTime arithmetic to correctly handle DST transitions.
+     * <p>
+     * MONTHLY and DAILY use ChronoUnit arithmetic (O(1)).
+     * Sub-daily fixed-duration granularities use Instant-based arithmetic (O(1)):
+     * since the materialization loop steps by fixed seconds on the Instant timeline,
+     * the count is simply totalSeconds / intervalSeconds — DST does not affect it.
      */
     public static int calculateExpectedIntervals(
             ZonedDateTime start, ZonedDateTime end, TimeGranularity granularity) {
@@ -39,13 +43,10 @@ public class VolumeSeriesService {
             return (int) java.time.temporal.ChronoUnit.DAYS.between(
                     start.toLocalDate(), end.toLocalDate());
         }
-        int count = 0;
-        ZonedDateTime cursor = start;
-        while (cursor.isBefore(end)) {
-            count++;
-            cursor = cursor.plus(granularity.getFixedDuration());
-        }
-        return count;
+        // O(1) for fixed-duration sub-daily: Instant arithmetic matches materializeIntervals loop
+        long totalSeconds = Duration.between(start.toInstant(), end.toInstant()).getSeconds();
+        long intervalSeconds = granularity.getFixedDuration().getSeconds();
+        return (int) (totalSeconds / intervalSeconds);
     }
 
     public VolumeSeries buildSeries(
@@ -65,7 +66,7 @@ public class VolumeSeriesService {
         int intervalCount = intervals.size();
 
         return new VolumeSeries(
-                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                generate(), tradeId, tradeLegId, 1,
                 volumeUnit, start, end, zoneId, granularity, profileType,
                 matStatus, null, intervalCount, intervalCount,
                 Instant.now(), Instant.now(), intervals, null, null);
@@ -99,7 +100,7 @@ public class VolumeSeriesService {
         int totalExpected = calculateExpectedIntervals(deliveryStart, deliveryEnd, granularity);
 
         return new VolumeSeries(
-                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                generate(), tradeId, tradeLegId, 1,
                 volumeUnit, deliveryStart, deliveryEnd, zoneId, granularity, profileType,
                 MaterializationStatus.PARTIAL, materializedThrough,
                 totalExpected, intervals.size(),
@@ -216,7 +217,7 @@ public class VolumeSeriesService {
             }
 
             intervals.add(new VolumeInterval(
-                    UUID.randomUUID(), null,
+                    generate(), null,
                     intervalStart, intervalEnd,
                     volume, precomputedEnergy,
                     IntervalStatus.CONFIRMED, cachedChunkMonth));
@@ -253,7 +254,7 @@ public class VolumeSeriesService {
             }
 
             intervals.add(new VolumeInterval(
-                    UUID.randomUUID(), null,
+                    generate(), null,
                     cursor, intervalEnd,
                     volume, energy,
                     IntervalStatus.CONFIRMED, YearMonth.from(cursor)));
@@ -290,7 +291,7 @@ public class VolumeSeriesService {
             }
 
             intervals.add(new VolumeInterval(
-                    UUID.randomUUID(), null,
+                    generate(), null,
                     cursor, intervalEnd,
                     volume, energy,
                     IntervalStatus.CONFIRMED, YearMonth.from(cursor)));
@@ -333,7 +334,7 @@ public class VolumeSeriesService {
                 deliveryStart, nearEnd, baseGranularity, volume, volumeUnit);
         int nearExpected = nearIntervals.size();
         VolumeSeries nearTerm = new VolumeSeries(
-                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                generate(), tradeId, tradeLegId, 1,
                 volumeUnit, deliveryStart, nearEnd, zoneId, baseGranularity, profileType,
                 MaterializationStatus.FULL, null, nearExpected, nearExpected,
                 now, now, nearIntervals, null, CascadeTier.NEAR_TERM);
@@ -348,7 +349,7 @@ public class VolumeSeriesService {
         ZonedDateTime mediumStart = weekEndZdt;
         int mediumExpected = calculateExpectedIntervals(mediumStart, mediumEnd, TimeGranularity.DAILY);
         VolumeSeries mediumTerm = new VolumeSeries(
-                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                generate(), tradeId, tradeLegId, 1,
                 volumeUnit, mediumStart, mediumEnd, zoneId, TimeGranularity.DAILY, profileType,
                 MaterializationStatus.PENDING, null, mediumExpected, 0,
                 now, now, new ArrayList<>(), null, CascadeTier.MEDIUM_TERM);
@@ -357,7 +358,7 @@ public class VolumeSeriesService {
         ZonedDateTime longStart = mediumEnd;
         int longExpected = calculateExpectedIntervals(longStart, deliveryEnd, TimeGranularity.MONTHLY);
         VolumeSeries longTerm = new VolumeSeries(
-                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                generate(), tradeId, tradeLegId, 1,
                 volumeUnit, longStart, deliveryEnd, zoneId, TimeGranularity.MONTHLY, profileType,
                 MaterializationStatus.PENDING, null, longExpected, 0,
                 now, now, new ArrayList<>(), null, CascadeTier.LONG_TERM);
