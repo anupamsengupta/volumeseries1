@@ -134,8 +134,8 @@ Root aggregate. One trade version has exactly one `VolumeSeries`.
 | Field | Type | Description |
 |---|---|---|
 | `id` | `UUID` | Primary key |
-| `tradeId` | `UUID` | FK to parent trade |
-| `tradeLegId` | `UUID` | FK to parent trade leg |
+| `tradeId` | `String` | FK to parent trade |
+| `tradeLegId` | `String` | FK to parent trade leg |
 | `tradeVersion` | `int` | Trade version (optimistic lock) |
 | `volumeUnit` | `VolumeUnit` | How to interpret volume on intervals (MW capacity vs MWh per period) |
 | `deliveryStart` | `ZonedDateTime` | Start of delivery window (inclusive) |
@@ -580,7 +580,7 @@ VolumeSeriesTest
 
 The `VolumeSeriesService` (singleton, `com.quickysoft.power.volume.service`) provides reusable methods for building and querying volume series. These are used by both the test suite and the materialization pipeline. The domain model classes are Java records in `com.quickysoft.power.volume.models`.
 
-- `buildSeries(start, end, granularity, volume, profileType, matStatus, volumeUnit, zoneId)`: Constructs a `VolumeSeries` with fully materialized intervals. Handles all granularities including `MONTHLY`. Sets bi-temporal timestamps and calculates expected interval count. The `volumeUnit` parameter determines how `calculateEnergy()` behaves on each produced interval.
+- `buildSeries(tradeId, tradeLegId, start, end, granularity, volume, profileType, matStatus, volumeUnit, zoneId)`: Constructs a `VolumeSeries` with fully materialized intervals. The `tradeId` and `tradeLegId` (both `String`) identify the parent trade and leg. Handles all granularities including `MONTHLY`. Sets bi-temporal timestamps and calculates expected interval count. The `volumeUnit` parameter determines how `calculateEnergy()` behaves on each produced interval.
 - `materializeIntervals(start, end, granularity, volume, volumeUnit)`: Walks the timeline and produces `VolumeInterval` records with calculated energy and chunk month assignment. Passes `volumeUnit` through to `calculateEnergy()`.
 - `totalEnergy(series)`: Sums energy across all intervals in a series, rounded to scale 6.
 
