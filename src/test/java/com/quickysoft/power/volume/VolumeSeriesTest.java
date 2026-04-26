@@ -559,32 +559,17 @@ class VolumeSeriesTest {
         @DisplayName("Partial materialization: M+3 window should only generate near-term intervals")
         void shouldSupportPartialMaterialization() {
             YearMonth matThrough = YearMonth.of(2026, 7);
-            ZonedDateTime matEnd = matThrough.plusMonths(1)
-                    .atDay(1).atStartOfDay(DELIVERY_TZ);
 
-            // Materialize only the partial window
-            List<VolumeInterval> partialIntervals = volumeSeriesService.materializeIntervals(
-                    start, matEnd, TimeGranularity.MIN_15,
-                    VOLUME_MW, VolumeUnit.MWH_PER_PERIOD);
-
-            // Calculate total expected for the full delivery window
-            int totalExpected = volumeSeriesService.buildSeries(
-                            UUID.randomUUID().toString(),
-                            UUID.randomUUID().toString(),
+            VolumeSeries series = volumeSeriesService.buildPartialSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
-                    VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
-                    VolumeUnit.MWH_PER_PERIOD, DELIVERY_TZ)
-                    .calculateExpectedIntervals();
+                    VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ, matThrough);
 
-            // Construct partial series with full delivery window but limited intervals
-            VolumeSeries series = new VolumeSeries(
-                    UUID.randomUUID(), UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1,
-                    VolumeUnit.MWH_PER_PERIOD, start, end, DELIVERY_TZ,
-                    TimeGranularity.MIN_15, ProfileType.BASELOAD,
-                    MaterializationStatus.PARTIAL, matThrough,
-                    totalExpected, partialIntervals.size(),
-                    Instant.now(), Instant.now(), partialIntervals, null);
-
+            assertEquals(MaterializationStatus.PARTIAL, series.materializationStatus());
+            assertEquals(matThrough, series.materializedThrough());
             assertTrue(series.materializedIntervalCount()
                             < series.totalExpectedIntervals(),
                     "Partial materialization should have fewer intervals than full");
@@ -594,6 +579,81 @@ class VolumeSeriesTest {
             assertEquals(LocalDate.of(2026, 8, 1),
                     unmaterialized.start().toLocalDate());
             assertEquals(end, unmaterialized.end());
+        }
+
+        @Test
+        @DisplayName("Chunk materialization should extend the materialized window")
+        void shouldMaterializeChunkAndExtendWindow() {
+            YearMonth matThrough = YearMonth.of(2026, 7);
+
+            VolumeSeries partial = volumeSeriesService.buildPartialSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end, TimeGranularity.MIN_15,
+                    VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ, matThrough);
+
+            int countBefore = partial.materializedIntervalCount();
+
+            // Materialize August 2026 chunk
+            VolumeSeries extended = volumeSeriesService.materializeChunk(
+                    partial, YearMonth.of(2026, 8), VOLUME_MW);
+
+            // materializedThrough advanced to August
+            assertEquals(YearMonth.of(2026, 8), extended.materializedThrough());
+            assertEquals(MaterializationStatus.PARTIAL, extended.materializationStatus());
+
+            // Interval count increased by August's intervals (31 days × 96)
+            int augIntervals = 31 * 96;
+            assertEquals(countBefore + augIntervals, extended.materializedIntervalCount());
+
+            // Intervals are contiguous at the boundary
+            List<VolumeInterval> intervals = extended.intervals();
+            for (int i = 0; i < intervals.size() - 1; i++) {
+                assertEquals(intervals.get(i).intervalEnd(),
+                        intervals.get(i + 1).intervalStart(),
+                        "Gap at interval " + i);
+            }
+
+            // Unmaterialized window starts at Sep 1
+            DeliveryWindow unmaterialized = extended.getUnmaterializedWindow();
+            assertNotNull(unmaterialized);
+            assertEquals(LocalDate.of(2026, 9, 1),
+                    unmaterialized.start().toLocalDate());
+        }
+
+        @Test
+        @DisplayName("Completing all chunks should promote status to FULL")
+        void shouldCompleteFullMaterializationViaChunks() {
+            // Use a short 2-month delivery for fast test
+            ZonedDateTime shortStart = ZonedDateTime.of(2026, 5, 1, 0, 0, 0, 0, DELIVERY_TZ);
+            ZonedDateTime shortEnd = ZonedDateTime.of(2026, 7, 1, 0, 0, 0, 0, DELIVERY_TZ);
+
+            // Partial: materialize May only
+            VolumeSeries partial = volumeSeriesService.buildPartialSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    shortStart, shortEnd, TimeGranularity.MIN_15,
+                    VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ, YearMonth.of(2026, 5));
+
+            assertEquals(MaterializationStatus.PARTIAL, partial.materializationStatus());
+
+            // Materialize June chunk → should complete
+            VolumeSeries completed = volumeSeriesService.materializeChunk(
+                    partial, YearMonth.of(2026, 6), VOLUME_MW);
+
+            assertEquals(MaterializationStatus.FULL, completed.materializationStatus(),
+                    "Should be FULL after all chunks materialized");
+            assertNull(completed.materializedThrough(),
+                    "materializedThrough should be null when FULL");
+            assertNull(completed.getUnmaterializedWindow(),
+                    "No unmaterialized window when FULL");
+            assertEquals(completed.totalExpectedIntervals(),
+                    completed.materializedIntervalCount(),
+                    "Materialized count should equal total expected");
         }
 
         @Test

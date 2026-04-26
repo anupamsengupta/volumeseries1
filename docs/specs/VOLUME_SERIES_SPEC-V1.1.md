@@ -437,7 +437,9 @@ VolumeSeriesTest
 │   ├── Annual energy total (MW_CAPACITY mode)
 │   ├── DST fall-back test (Oct 25 2026, 100 intervals, 375 MWh)
 │   ├── DST spring-forward test (Mar 28 2027, 92 intervals, 345 MWh)
-│   ├── Partial materialization (M+3 rolling horizon)
+│   ├── Partial materialization (M+3 rolling horizon via buildPartialSeries)
+│   ├── Chunk materialization extends window (materializeChunk)
+│   ├── Completing all chunks promotes status to FULL
 │   ├── Chunk month partitioning (13 months)
 │   ├── Formula attachment test
 │   └── Fully materialized has no unmaterialized window
@@ -581,6 +583,9 @@ VolumeSeriesTest
 The `VolumeSeriesService` (singleton, `com.quickysoft.power.volume.service`) provides reusable methods for building and querying volume series. These are used by both the test suite and the materialization pipeline. The domain model classes are Java records in `com.quickysoft.power.volume.models`.
 
 - `buildSeries(tradeId, tradeLegId, start, end, granularity, volume, profileType, matStatus, volumeUnit, zoneId)`: Constructs a `VolumeSeries` with fully materialized intervals. The `tradeId` and `tradeLegId` (both `String`) identify the parent trade and leg. Handles all granularities including `MONTHLY`. Sets bi-temporal timestamps and calculates expected interval count. The `volumeUnit` parameter determines how `calculateEnergy()` behaves on each produced interval.
+- `buildPartialSeries(tradeId, tradeLegId, deliveryStart, deliveryEnd, granularity, volume, profileType, volumeUnit, zoneId, materializedThrough)`: Constructs a `VolumeSeries` with `materializationStatus = PARTIAL`, materializing only through the given `YearMonth`. Records the full delivery window (`deliveryStart` to `deliveryEnd`) and computes `totalExpectedIntervals` from the full range for progress tracking. Used by the Detail Generation Service for long-term PPAs with rolling-horizon materialization (Section 4.2).
+- `materializeChunk(series, chunkMonth, volume)`: Materializes a single monthly chunk and appends it to an existing PARTIAL series. Returns a new `VolumeSeries` record with updated intervals, `materializedThrough`, and `materializedIntervalCount`. Automatically promotes `materializationStatus` to `FULL` (with `materializedThrough = null`) when all expected intervals have been materialized. Chunk boundaries are clamped to the delivery window. Used by the monthly chunk processor (Section 4.3).
+- `calculateExpectedIntervals(start, end, granularity)` (static): Computes the expected interval count for a delivery window and granularity using ZonedDateTime arithmetic (DST-safe). Used by both `buildPartialSeries()` and `VolumeSeries.calculateExpectedIntervals()`.
 - `materializeIntervals(start, end, granularity, volume, volumeUnit)`: Walks the timeline and produces `VolumeInterval` records with calculated energy and chunk month assignment. Passes `volumeUnit` through to `calculateEnergy()`.
 - `totalEnergy(series)`: Sums energy across all intervals in a series, rounded to scale 6.
 

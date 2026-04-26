@@ -24,6 +24,25 @@ public class VolumeSeriesService {
         return VOLUME_SERIES_SERVICE;
     }
 
+    /**
+     * Calculate expected interval count for a delivery window and granularity.
+     * Uses ZonedDateTime arithmetic to correctly handle DST transitions.
+     */
+    public static int calculateExpectedIntervals(
+            ZonedDateTime start, ZonedDateTime end, TimeGranularity granularity) {
+        if (granularity == TimeGranularity.MONTHLY) {
+            return (int) java.time.temporal.ChronoUnit.MONTHS.between(
+                    YearMonth.from(start), YearMonth.from(end));
+        }
+        int count = 0;
+        ZonedDateTime cursor = start;
+        while (cursor.isBefore(end)) {
+            count++;
+            cursor = cursor.plus(granularity.getFixedDuration());
+        }
+        return count;
+    }
+
     public VolumeSeries buildSeries(
             String tradeId,
             String tradeLegId,
@@ -45,6 +64,95 @@ public class VolumeSeriesService {
                 volumeUnit, start, end, zoneId, granularity, profileType,
                 matStatus, null, intervalCount, intervalCount,
                 Instant.now(), Instant.now(), intervals, null);
+    }
+
+    /**
+     * Build a PARTIAL series: materializes only through the given month,
+     * but records the full delivery window for downstream position aggregation.
+     */
+    public VolumeSeries buildPartialSeries(
+            String tradeId,
+            String tradeLegId,
+            ZonedDateTime deliveryStart,
+            ZonedDateTime deliveryEnd,
+            TimeGranularity granularity,
+            BigDecimal volume,
+            ProfileType profileType,
+            VolumeUnit volumeUnit,
+            ZoneId zoneId,
+            YearMonth materializedThrough) {
+
+        ZonedDateTime partialEnd = materializedThrough.plusMonths(1)
+                .atDay(1).atStartOfDay(zoneId);
+        if (partialEnd.isAfter(deliveryEnd)) {
+            partialEnd = deliveryEnd;
+        }
+
+        List<VolumeInterval> intervals = materializeIntervals(
+                deliveryStart, partialEnd, granularity, volume, volumeUnit);
+
+        int totalExpected = calculateExpectedIntervals(deliveryStart, deliveryEnd, granularity);
+
+        return new VolumeSeries(
+                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                volumeUnit, deliveryStart, deliveryEnd, zoneId, granularity, profileType,
+                MaterializationStatus.PARTIAL, materializedThrough,
+                totalExpected, intervals.size(),
+                Instant.now(), Instant.now(), intervals, null);
+    }
+
+    /**
+     * Materialize a single monthly chunk and append it to an existing PARTIAL series.
+     * Returns a new VolumeSeries with the chunk intervals merged in order.
+     * If all intervals are now materialized, status is promoted to FULL.
+     */
+    public VolumeSeries materializeChunk(
+            VolumeSeries series,
+            YearMonth chunkMonth,
+            BigDecimal volume) {
+
+        ZoneId zone = series.deliveryTimezone();
+        ZonedDateTime chunkStart = chunkMonth.atDay(1).atStartOfDay(zone);
+        ZonedDateTime chunkEnd = chunkMonth.plusMonths(1).atDay(1).atStartOfDay(zone);
+
+        // Clamp to delivery window
+        if (chunkStart.isBefore(series.deliveryStart())) {
+            chunkStart = series.deliveryStart();
+        }
+        if (chunkEnd.isAfter(series.deliveryEnd())) {
+            chunkEnd = series.deliveryEnd();
+        }
+
+        List<VolumeInterval> chunkIntervals = materializeIntervals(
+                chunkStart, chunkEnd, series.granularity(), volume, series.volumeUnit());
+
+        // Merge: existing intervals + new chunk (maintains chronological order
+        // since chunks are processed sequentially after the materialized window)
+        List<VolumeInterval> merged = new ArrayList<>(
+                series.intervals().size() + chunkIntervals.size());
+        merged.addAll(series.intervals());
+        merged.addAll(chunkIntervals);
+
+        int newCount = merged.size();
+        YearMonth newMaterializedThrough = series.materializedThrough() != null
+                && series.materializedThrough().isAfter(chunkMonth)
+                ? series.materializedThrough() : chunkMonth;
+
+        // Promote to FULL if all intervals are materialized
+        boolean complete = newCount >= series.totalExpectedIntervals();
+        MaterializationStatus newStatus = complete
+                ? MaterializationStatus.FULL : MaterializationStatus.PARTIAL;
+        YearMonth throughValue = complete ? null : newMaterializedThrough;
+
+        return new VolumeSeries(
+                series.id(), series.tradeId(), series.tradeLegId(),
+                series.tradeVersion(), series.volumeUnit(),
+                series.deliveryStart(), series.deliveryEnd(), series.deliveryTimezone(),
+                series.granularity(), series.profileType(),
+                newStatus, throughValue,
+                series.totalExpectedIntervals(), newCount,
+                series.transactionTime(), series.validTime(),
+                merged, series.formula());
     }
 
     public List<VolumeInterval> materializeIntervals(

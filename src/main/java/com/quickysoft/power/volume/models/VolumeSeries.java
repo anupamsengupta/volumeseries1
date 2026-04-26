@@ -4,7 +4,8 @@ import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
+import com.quickysoft.power.volume.service.VolumeSeriesService;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -54,18 +55,8 @@ public record VolumeSeries(
      * handles DST transitions (23-hour and 25-hour days).
      */
     public int calculateExpectedIntervals() {
-        if (granularity == TimeGranularity.MONTHLY) {
-            return (int) ChronoUnit.MONTHS.between(
-                    YearMonth.from(deliveryStart),
-                    YearMonth.from(deliveryEnd));
-        }
-        int count = 0;
-        ZonedDateTime cursor = deliveryStart;
-        while (cursor.isBefore(deliveryEnd)) {
-            count++;
-            cursor = cursor.plus(granularity.getFixedDuration());
-        }
-        return count;
+        return VolumeSeriesService.calculateExpectedIntervals(
+                deliveryStart, deliveryEnd, granularity);
     }
 
     /**
