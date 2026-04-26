@@ -978,4 +978,333 @@ class VolumeSeriesTest {
                     "DeliveryWindow should reject end before start");
         }
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // Cascade materialization tests
+    // ════════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Cascade: multi-granularity materialization for long-term PPAs")
+    class CascadeMaterializationTests {
+
+        // 10-year PPA: Apr 24 2026 → Apr 24 2036, base=MIN_15
+        private final ZonedDateTime deliveryStart =
+                ZonedDateTime.of(2026, 4, 24, 0, 0, 0, 0, DELIVERY_TZ);
+        private final ZonedDateTime deliveryEnd =
+                ZonedDateTime.of(2036, 4, 24, 0, 0, 0, 0, DELIVERY_TZ);
+        // Week ends Sunday midnight → Monday Apr 27
+        private final LocalDate weekEnd = LocalDate.of(2026, 4, 27);
+
+        @Test
+        @DisplayName("buildCascadeSeries should produce three tiers with correct properties")
+        void shouldBuildCascadeWithThreeTiers() {
+            CascadeResult result = volumeSeriesService.buildCascadeSeries(
+                    "TRADE-1", "LEG-1",
+                    deliveryStart, deliveryEnd,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, weekEnd);
+
+            // Near-term: Apr 24 → Apr 27 at MIN_15, FULL
+            VolumeSeries near = result.nearTerm();
+            assertEquals(CascadeTier.NEAR_TERM, near.cascadeTier());
+            assertEquals(TimeGranularity.MIN_15, near.granularity());
+            assertEquals(MaterializationStatus.FULL, near.materializationStatus());
+            assertEquals(deliveryStart, near.deliveryStart());
+            assertEquals(weekEnd.atStartOfDay(DELIVERY_TZ), near.deliveryEnd());
+            // 3 days × 96 intervals/day = 288
+            assertEquals(3 * 96, near.intervals().size(),
+                    "Near-term should have 3 days × 96 = 288 intervals");
+            assertEquals(near.intervals().size(), near.totalExpectedIntervals());
+            assertEquals(near.intervals().size(), near.materializedIntervalCount());
+
+            // Medium-term: Apr 27 → Jul 1 at DAILY, PENDING
+            VolumeSeries medium = result.mediumTerm();
+            assertEquals(CascadeTier.MEDIUM_TERM, medium.cascadeTier());
+            assertEquals(TimeGranularity.DAILY, medium.granularity());
+            assertEquals(MaterializationStatus.PENDING, medium.materializationStatus());
+            assertEquals(weekEnd.atStartOfDay(DELIVERY_TZ), medium.deliveryStart());
+            // M+3 from Apr = Jul
+            assertEquals(ZonedDateTime.of(2026, 7, 1, 0, 0, 0, 0, DELIVERY_TZ),
+                    medium.deliveryEnd());
+            assertEquals(0, medium.intervals().size(), "Medium-term starts with no intervals");
+            // Apr 27,28,29,30 = 4 days + May 31 + Jun 30 = 65 days total
+            int expectedMediumDays = 4 + 31 + 30; // rest of Apr + May + Jun
+            assertEquals(expectedMediumDays, medium.totalExpectedIntervals(),
+                    "Medium-term expected daily intervals");
+
+            // Long-term: Jul 1 → Apr 24 2036 at MONTHLY, PENDING
+            VolumeSeries longT = result.longTerm();
+            assertEquals(CascadeTier.LONG_TERM, longT.cascadeTier());
+            assertEquals(TimeGranularity.MONTHLY, longT.granularity());
+            assertEquals(MaterializationStatus.PENDING, longT.materializationStatus());
+            assertEquals(ZonedDateTime.of(2026, 7, 1, 0, 0, 0, 0, DELIVERY_TZ),
+                    longT.deliveryStart());
+            assertEquals(deliveryEnd, longT.deliveryEnd());
+            assertEquals(0, longT.intervals().size(), "Long-term starts with no intervals");
+            // Jul 2026 → Apr 2036 = 117 months
+            assertEquals(117, longT.totalExpectedIntervals(),
+                    "Long-term expected monthly intervals");
+
+            // All share same tradeId/tradeLegId
+            assertEquals("TRADE-1", near.tradeId());
+            assertEquals("TRADE-1", medium.tradeId());
+            assertEquals("TRADE-1", longT.tradeId());
+            assertEquals("LEG-1", near.tradeLegId());
+            assertEquals("LEG-1", medium.tradeLegId());
+            assertEquals("LEG-1", longT.tradeLegId());
+        }
+
+        @Test
+        @DisplayName("materializeMediumTermChunk should generate daily intervals")
+        void shouldMaterializeMediumTermChunk() {
+            CascadeResult cascade = volumeSeriesService.buildCascadeSeries(
+                    "TRADE-1", "LEG-1",
+                    deliveryStart, deliveryEnd,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, weekEnd);
+
+            // Materialize May 2026 chunk (31 days)
+            VolumeSeries updated = volumeSeriesService.materializeMediumTermChunk(
+                    cascade.mediumTerm(), YearMonth.of(2026, 5), VOLUME_MW);
+
+            assertEquals(MaterializationStatus.PARTIAL, updated.materializationStatus());
+            assertEquals(31, updated.materializedIntervalCount(),
+                    "May has 31 daily intervals");
+            assertEquals(YearMonth.of(2026, 5), updated.materializedThrough());
+
+            // Verify contiguity of daily intervals
+            List<VolumeInterval> intervals = updated.intervals();
+            for (int i = 0; i < intervals.size() - 1; i++) {
+                assertEquals(intervals.get(i).intervalEnd(),
+                        intervals.get(i + 1).intervalStart(),
+                        "Gap at daily interval " + i);
+            }
+
+            // First interval starts May 1
+            assertEquals(LocalDate.of(2026, 5, 1),
+                    intervals.get(0).intervalStart().toLocalDate());
+        }
+
+        @Test
+        @DisplayName("materializeLongTermChunk should generate a monthly interval")
+        void shouldMaterializeLongTermChunk() {
+            CascadeResult cascade = volumeSeriesService.buildCascadeSeries(
+                    "TRADE-1", "LEG-1",
+                    deliveryStart, deliveryEnd,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, weekEnd);
+
+            // Materialize Aug 2026 chunk
+            VolumeSeries updated = volumeSeriesService.materializeLongTermChunk(
+                    cascade.longTerm(), YearMonth.of(2026, 8), VOLUME_MW);
+
+            assertEquals(1, updated.materializedIntervalCount());
+            assertEquals(YearMonth.of(2026, 8), updated.materializedThrough());
+
+            VolumeInterval monthly = updated.intervals().get(0);
+            assertEquals(ZonedDateTime.of(2026, 8, 1, 0, 0, 0, 0, DELIVERY_TZ),
+                    monthly.intervalStart());
+            assertEquals(ZonedDateTime.of(2026, 9, 1, 0, 0, 0, 0, DELIVERY_TZ),
+                    monthly.intervalEnd());
+
+            // MW_CAPACITY: energy = 15 MW × hours in Aug (31 × 24 = 744h)
+            BigDecimal expectedEnergy = VOLUME_MW.multiply(new BigDecimal("744"))
+                    .setScale(6, RoundingMode.HALF_UP);
+            assertEquals(0, expectedEnergy.compareTo(monthly.energy()),
+                    "Monthly energy should be volume × hours in month");
+        }
+
+        @Test
+        @DisplayName("disaggregateMonthlyToDaily should move monthly → daily intervals")
+        void shouldDisaggregateMonthlyToDaily() {
+            CascadeResult cascade = volumeSeriesService.buildCascadeSeries(
+                    "TRADE-1", "LEG-1",
+                    deliveryStart, deliveryEnd,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, weekEnd);
+
+            // First materialize Aug in long-term
+            VolumeSeries longWithAug = volumeSeriesService.materializeLongTermChunk(
+                    cascade.longTerm(), YearMonth.of(2026, 8), VOLUME_MW);
+
+            BigDecimal monthlyEnergy = longWithAug.intervals().get(0).energy();
+
+            // Build an expanded medium-term series that covers Aug
+            // (simulates the rolling window having moved forward)
+            ZonedDateTime expandedMedStart = ZonedDateTime.of(2026, 7, 1, 0, 0, 0, 0, DELIVERY_TZ);
+            ZonedDateTime expandedMedEnd = ZonedDateTime.of(2026, 10, 1, 0, 0, 0, 0, DELIVERY_TZ);
+            VolumeSeries expandedMedium = new VolumeSeries(
+                    UUID.randomUUID(), "TRADE-1", "LEG-1", 1,
+                    VolumeUnit.MW_CAPACITY, expandedMedStart, expandedMedEnd, DELIVERY_TZ,
+                    TimeGranularity.DAILY, ProfileType.BASELOAD,
+                    MaterializationStatus.PENDING, null,
+                    VolumeSeriesService.calculateExpectedIntervals(
+                            expandedMedStart, expandedMedEnd, TimeGranularity.DAILY),
+                    0, Instant.now(), Instant.now(), new java.util.ArrayList<>(), null,
+                    CascadeTier.MEDIUM_TERM);
+
+            // Disaggregate Aug from long-term → expanded medium-term
+            DisaggregationResult result = volumeSeriesService.disaggregateMonthlyToDaily(
+                    longWithAug, expandedMedium,
+                    YearMonth.of(2026, 8), VOLUME_MW);
+
+            // Monthly interval removed from source
+            assertEquals(0, result.source().intervals().size(),
+                    "Long-term should have no intervals after disaggregation");
+
+            // Daily intervals in target
+            assertEquals(31, result.target().intervals().size(),
+                    "August should produce 31 daily intervals");
+
+            // Verify contiguity
+            List<VolumeInterval> dailyIntervals = result.target().intervals();
+            for (int i = 0; i < dailyIntervals.size() - 1; i++) {
+                assertEquals(dailyIntervals.get(i).intervalEnd(),
+                        dailyIntervals.get(i + 1).intervalStart(),
+                        "Gap at daily interval " + i);
+            }
+
+            // Energy invariant: sum of daily energies = monthly energy
+            BigDecimal dailyTotalEnergy = dailyIntervals.stream()
+                    .map(VolumeInterval::energy)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(6, RoundingMode.HALF_UP);
+            assertEquals(0, monthlyEnergy.compareTo(dailyTotalEnergy),
+                    "Sum of daily energies must equal monthly energy");
+        }
+
+        @Test
+        @DisplayName("disaggregateDailyToBase should move daily → 15-min intervals")
+        void shouldDisaggregateDailyToBase() {
+            CascadeResult cascade = volumeSeriesService.buildCascadeSeries(
+                    "TRADE-1", "LEG-1",
+                    deliveryStart, deliveryEnd,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, weekEnd);
+
+            // Materialize May in medium-term (31 days of daily intervals)
+            VolumeSeries mediumWithMay = volumeSeriesService.materializeMediumTermChunk(
+                    cascade.mediumTerm(), YearMonth.of(2026, 5), VOLUME_MW);
+
+            // Disaggregate May 1-3 (3 days) from medium-term → near-term
+            LocalDate from = LocalDate.of(2026, 5, 1);
+            LocalDate to = LocalDate.of(2026, 5, 4); // exclusive
+
+            // Energy of the 3 daily intervals being disaggregated
+            BigDecimal dailyEnergy = mediumWithMay.intervals().stream()
+                    .filter(vi -> !vi.intervalStart().toLocalDate().isBefore(from)
+                            && vi.intervalStart().toLocalDate().isBefore(to))
+                    .map(VolumeInterval::energy)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(6, RoundingMode.HALF_UP);
+
+            DisaggregationResult result = volumeSeriesService.disaggregateDailyToBase(
+                    mediumWithMay, cascade.nearTerm(), from, to, VOLUME_MW);
+
+            // 3 daily intervals removed from medium-term
+            assertEquals(31 - 3, result.source().intervals().size(),
+                    "Medium-term should have 28 daily intervals remaining");
+
+            // 3 days × 96 = 288 base intervals added to near-term
+            int nearOriginal = cascade.nearTerm().intervals().size(); // 288
+            assertEquals(nearOriginal + 3 * 96, result.target().intervals().size(),
+                    "Near-term should have original + 288 new intervals");
+
+            // Energy invariant: sum of base energies = sum of daily energies
+            BigDecimal baseEnergy = result.target().intervals().stream()
+                    .skip(nearOriginal) // only the new intervals
+                    .map(VolumeInterval::energy)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(6, RoundingMode.HALF_UP);
+            assertEquals(0, dailyEnergy.compareTo(baseEnergy),
+                    "Sum of base energies must equal sum of daily energies");
+        }
+
+        @Test
+        @DisplayName("Daily intervals on DST days should have correct energy")
+        void shouldHandleDstInDailyIntervals() {
+            // Fall-back: Oct 25 2026 is 25 hours in Europe/Berlin
+            // Spring-forward: Mar 28 2027 is 23 hours in Europe/Berlin
+            ZonedDateTime dstStart = ZonedDateTime.of(2026, 10, 24, 0, 0, 0, 0, DELIVERY_TZ);
+            ZonedDateTime dstEnd = ZonedDateTime.of(2026, 10, 27, 0, 0, 0, 0, DELIVERY_TZ);
+
+            VolumeSeries dstSeries = volumeSeriesService.buildSeries(
+                    "TRADE-DST", "LEG-DST",
+                    dstStart, dstEnd, TimeGranularity.DAILY,
+                    VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+
+            assertEquals(3, dstSeries.intervals().size(), "3 daily intervals");
+
+            VolumeInterval oct24 = dstSeries.intervals().get(0); // normal 24h
+            VolumeInterval oct25 = dstSeries.intervals().get(1); // fall-back 25h
+            VolumeInterval oct26 = dstSeries.intervals().get(2); // normal 24h
+
+            // 15 MW × 24h = 360 MWh
+            BigDecimal energy24h = VOLUME_MW.multiply(new BigDecimal("24"))
+                    .setScale(6, RoundingMode.HALF_UP);
+            // 15 MW × 25h = 375 MWh
+            BigDecimal energy25h = VOLUME_MW.multiply(new BigDecimal("25"))
+                    .setScale(6, RoundingMode.HALF_UP);
+
+            assertEquals(0, energy24h.compareTo(oct24.energy()),
+                    "Oct 24 (normal day) energy should be 360 MWh");
+            assertEquals(0, energy25h.compareTo(oct25.energy()),
+                    "Oct 25 (fall-back, 25h) energy should be 375 MWh");
+            assertEquals(0, energy24h.compareTo(oct26.energy()),
+                    "Oct 26 (normal day) energy should be 360 MWh");
+
+            // Spring-forward test
+            ZonedDateTime springStart = ZonedDateTime.of(2027, 3, 27, 0, 0, 0, 0, DELIVERY_TZ);
+            ZonedDateTime springEnd = ZonedDateTime.of(2027, 3, 30, 0, 0, 0, 0, DELIVERY_TZ);
+
+            VolumeSeries springSeries = volumeSeriesService.buildSeries(
+                    "TRADE-DST2", "LEG-DST2",
+                    springStart, springEnd, TimeGranularity.DAILY,
+                    VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+
+            VolumeInterval mar28 = springSeries.intervals().get(1); // spring-forward 23h
+            BigDecimal energy23h = VOLUME_MW.multiply(new BigDecimal("23"))
+                    .setScale(6, RoundingMode.HALF_UP);
+            assertEquals(0, energy23h.compareTo(mar28.energy()),
+                    "Mar 28 (spring-forward, 23h) energy should be 345 MWh");
+        }
+
+        @Test
+        @DisplayName("Medium-term should promote to FULL when all chunks materialized")
+        void shouldPromoteToFullWhenAllChunksMaterialized() {
+            // Short cascade: 1 week near-term, 2 months medium-term, delivery ends Jul 1
+            ZonedDateTime shortStart = ZonedDateTime.of(2026, 4, 24, 0, 0, 0, 0, DELIVERY_TZ);
+            ZonedDateTime shortEnd = ZonedDateTime.of(2026, 7, 1, 0, 0, 0, 0, DELIVERY_TZ);
+
+            CascadeResult cascade = volumeSeriesService.buildCascadeSeries(
+                    "TRADE-SHORT", "LEG-SHORT",
+                    shortStart, shortEnd,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, weekEnd);
+
+            VolumeSeries medium = cascade.mediumTerm();
+            assertEquals(MaterializationStatus.PENDING, medium.materializationStatus());
+
+            // Materialize rest of Apr (27-30 = 3 days, but clamped to medium window)
+            medium = volumeSeriesService.materializeMediumTermChunk(
+                    medium, YearMonth.of(2026, 4), VOLUME_MW);
+            assertEquals(MaterializationStatus.PARTIAL, medium.materializationStatus());
+
+            // Materialize May (31 days)
+            medium = volumeSeriesService.materializeMediumTermChunk(
+                    medium, YearMonth.of(2026, 5), VOLUME_MW);
+            assertEquals(MaterializationStatus.PARTIAL, medium.materializationStatus());
+
+            // Materialize June (30 days) — should complete
+            medium = volumeSeriesService.materializeMediumTermChunk(
+                    medium, YearMonth.of(2026, 6), VOLUME_MW);
+            assertEquals(MaterializationStatus.FULL, medium.materializationStatus(),
+                    "Should be FULL after all medium-term months materialized");
+            assertNull(medium.materializedThrough(),
+                    "materializedThrough should be null when FULL");
+            assertEquals(medium.totalExpectedIntervals(), medium.materializedIntervalCount());
+        }
+    }
 }

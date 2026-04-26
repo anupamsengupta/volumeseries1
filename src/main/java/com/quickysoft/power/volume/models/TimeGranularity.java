@@ -6,7 +6,8 @@ import java.time.Duration;
  * Supported delivery interval granularities for EU physical power markets.
  * <p>
  * Sub-daily granularities (5-min through hourly) have fixed durations.
- * DAILY and MONTHLY are variable due to DST transitions and month lengths.
+ * DAILY and MONTHLY are variable due to DST transitions and month lengths
+ * and must use ZonedDateTime arithmetic instead of Instant arithmetic.
  */
 public enum TimeGranularity {
 
@@ -14,7 +15,7 @@ public enum TimeGranularity {
     MIN_15(Duration.ofMinutes(15)),
     MIN_30(Duration.ofMinutes(30)),
     HOURLY(Duration.ofHours(1)),
-    DAILY(Duration.ofDays(1)),
+    DAILY(null),
     MONTHLY(null);
 
     private final Duration fixedDuration;
@@ -24,16 +25,23 @@ public enum TimeGranularity {
     }
 
     /**
-     * Returns the fixed duration for sub-daily and daily granularities.
+     * Returns the fixed duration for sub-daily granularities.
      *
-     * @throws UnsupportedOperationException for MONTHLY (variable length)
+     * @throws UnsupportedOperationException for DAILY and MONTHLY (variable length)
      */
     public Duration getFixedDuration() {
-        if (this == MONTHLY) {
+        if (fixedDuration == null) {
             throw new UnsupportedOperationException(
-                    "MONTHLY has variable duration; use YearMonth arithmetic");
+                    this + " has variable duration; use ZonedDateTime arithmetic");
         }
         return fixedDuration;
+    }
+
+    /**
+     * Whether this granularity has a fixed duration independent of DST or month length.
+     */
+    public boolean isFixedDuration() {
+        return fixedDuration != null;
     }
 
     public boolean isSubDaily() {

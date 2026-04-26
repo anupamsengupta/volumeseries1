@@ -45,7 +45,8 @@ public record VolumeSeries(
         Instant transactionTime,
         Instant validTime,
         List<VolumeInterval> intervals,
-        VolumeFormula formula
+        VolumeFormula formula,
+        CascadeTier cascadeTier
 ) {
 
     /**
@@ -88,6 +89,7 @@ public record VolumeSeries(
         return new VolumeSeries(id, tradeId, tradeLegId, tradeVersion, volumeUnit,
                 deliveryStart, deliveryEnd, deliveryTimezone, granularity, profileType,
                 materializationStatus, materializedThrough, totalExpectedIntervals,
-                materializedIntervalCount, transactionTime, validTime, intervals, formula);
+                materializedIntervalCount, transactionTime, validTime, intervals, formula,
+                cascadeTier);
     }
 }

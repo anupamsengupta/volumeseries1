@@ -74,14 +74,14 @@ Defines the interval width for delivery schedule decomposition.
 | `MIN_15` | 15 minutes | Yes | EPEX SPOT standard, XBID |
 | `MIN_30` | 30 minutes | Yes | UK market (ELEXON), some OTC |
 | `HOURLY` | 60 minutes | Yes | DA auction, bilateral OTC |
-| `DAILY` | 1 day | Nominal | Settlement period granularity; see note below |
+| `DAILY` | Variable | No | Settlement period granularity; see note below |
 | `MONTHLY` | Variable | No | Forward contracts, PPAs |
 
-`DAILY` uses a nominal fixed duration of `Duration.ofDays(1)` (24 hours). On DST transition days the actual wall-clock day is 23 or 25 hours. Because `isSubDaily()` returns `false` for `DAILY`, the materialization loop steps by a fixed 24-hour `Duration` rather than using DST-aware `ZonedDateTime` day arithmetic. This means `DAILY` granularity should **not** be used for energy-critical settlement where DST-day accuracy matters — use sub-daily granularities (`MIN_15`, `HOURLY`, etc.) instead, which correctly handle DST via `ZonedDateTime.plus(Duration)`. The `calculateEnergy()` method on `VolumeInterval` always uses `Instant`-based elapsed time, so energy values remain correct even for `DAILY` intervals that land on DST transition days; only the interval boundary alignment is affected.
+`DAILY` has variable duration due to DST transitions (23 or 25 hours on transition days). Like `MONTHLY`, it stores `null` for `fixedDuration` and throws `UnsupportedOperationException` from `getFixedDuration()`. The materialization loop uses `ZonedDateTime.plusDays(1)` for DST-safe day arithmetic, producing correct interval boundaries and energy values on DST transition days. `isFixedDuration()` returns `false` for both `DAILY` and `MONTHLY`.
 
 `MONTHLY` has variable duration (28–31 days) and throws `UnsupportedOperationException` from `getFixedDuration()`. Callers must use `YearMonth` arithmetic instead.
 
-The `isSubDaily()` method returns `true` for `MIN_5` through `HOURLY`, which is used by the Detail Generation Service to decide whether DST-aware interval walking is needed.
+The `isSubDaily()` method returns `true` for `MIN_5` through `HOURLY`. The `isFixedDuration()` method returns `true` for `MIN_5` through `HOURLY` and `false` for `DAILY` and `MONTHLY`.
 
 #### 3.2.2 ProfileType
 
@@ -125,6 +125,18 @@ Defines how the `volume` field on `VolumeInterval` is interpreted. EU power mark
 
 `MW_CAPACITY` is the standard for exchange-traded DA/ID products (EPEX SPOT, Nord Pool, EEX). `MWH_PER_PERIOD` is used in some bilateral PPAs, tolerance band settlements, and generation-following contracts where the forecast provides MWh per interval directly.
 
+#### 3.2.6 CascadeTier
+
+Identifies which tier a `VolumeSeries` belongs to in the multi-granularity cascade materialization strategy (Section 4.5).
+
+| Value | Window | Granularity | Description |
+|---|---|---|---|
+| `NEAR_TERM` | Current week | Contract base (e.g., MIN_15) | Materialized upfront, status=FULL |
+| `MEDIUM_TERM` | Rest of month + M+1 + M+2 | DAILY | Generated via Kafka chunks |
+| `LONG_TERM` | M+3 to delivery end | MONTHLY | Generated via Kafka chunks |
+
+A long-tenor PPA produces three series per trade leg, one per tier. As time progresses, coarse intervals are disaggregated into finer ones (LONG_TERM monthly → MEDIUM_TERM daily → NEAR_TERM base granularity). Non-cascade series have `cascadeTier = null`.
+
 ### 3.3 Core Entities
 
 #### 3.3.1 VolumeSeries
@@ -151,10 +163,11 @@ Root aggregate. One trade version has exactly one `VolumeSeries`.
 | `validTime` | `Instant` | Bi-temporal: when economically effective |
 | `intervals` | `List<VolumeInterval>` | Ordered by `intervalStart` |
 | `formula` | `VolumeFormula` | Contract-level volume definition |
+| `cascadeTier` | `CascadeTier` | Cascade tier (null for non-cascade series); see Section 4.5 |
 
 **Key Methods:**
 
-- `calculateExpectedIntervals()`: Walks the delivery timeline at the configured granularity using `ZonedDateTime` arithmetic, correctly accounting for DST transitions. For `MONTHLY`, uses `ChronoUnit.MONTHS.between()`.
+- `calculateExpectedIntervals()`: Walks the delivery timeline at the configured granularity using `ZonedDateTime` arithmetic, correctly accounting for DST transitions. For `MONTHLY`, uses `ChronoUnit.MONTHS.between()`. For `DAILY`, uses `ChronoUnit.DAYS.between()`.
 - `getUnmaterializedWindow()`: Returns a `DeliveryWindow` representing the portion of the delivery period not yet materialized. Returns `null` if fully materialized. Used by the Position Service to determine when contract-level (aggregate) position is needed vs detail-level (interval) position.
 
 #### 3.3.2 VolumeInterval
@@ -300,6 +313,34 @@ Each monthly chunk is a separate Kafka message (`trade.detail.chunk.requested`) 
 
 The Position Service uses `VolumeSeries.getUnmaterializedWindow()` to determine which tier to apply.
 
+### 4.5 Granularity Cascade
+
+For long-tenor PPAs (e.g., 10-year at 15-min granularity = ~3.5M intervals), a multi-granularity cascade reduces the materialization footprint by using coarser granularity for far-dated periods.
+
+**Three-Tier Layout** (example: 10-year PPA, base=MIN_15, trade date in week of Apr 24 2026):
+
+| Tier | Window | Granularity | Status | `totalExpectedIntervals` |
+|---|---|---|---|---|
+| NEAR_TERM | Current week (delivery start → week end) | MIN_15 | FULL (upfront) | ~288 (3 days × 96) |
+| MEDIUM_TERM | Rest of month + M+1 + M+2 (week end → end of M+2) | DAILY | PENDING → PARTIAL → FULL | ~65 days |
+| LONG_TERM | M+3 to delivery end | MONTHLY | PENDING → PARTIAL → FULL | ~117 months |
+
+Each tier is a **separate `VolumeSeries`** sharing the same `tradeId`/`tradeLegId` but with a different `cascadeTier`, `granularity`, and delivery window. The `totalExpectedIntervals` counts at the tier's own granularity, not the base granularity.
+
+**Generation Flow:**
+1. `buildCascadeSeries()` creates all three tier series. Near-term is materialized immediately (FULL). Medium and long-term start as PENDING with empty interval lists.
+2. Medium-term daily intervals are generated via Kafka chunk messages using `materializeMediumTermChunk()`.
+3. Long-term monthly intervals are generated via Kafka chunk messages using `materializeLongTermChunk()`.
+4. As time progresses (e.g., weekly cron), coarse intervals are disaggregated into finer ones:
+   - `disaggregateMonthlyToDaily()`: Removes a monthly interval from the long-term series and generates equivalent daily intervals in the medium-term series.
+   - `disaggregateDailyToBase()`: Removes daily intervals from the medium-term series and generates equivalent base-granularity intervals in the near-term series.
+
+**Energy Invariant:** Disaggregation preserves the energy invariant — the sum of finer-grained energies equals the coarser interval's energy.
+
+**Result Records:**
+- `CascadeResult(nearTerm, mediumTerm, longTerm)`: Returned by `buildCascadeSeries()`.
+- `DisaggregationResult(source, target)`: Returned by disaggregation methods. `source` has the coarse interval removed; `target` has finer intervals appended.
+
 **Pricing Service** mirrors this:
 
 | Tier | Source | Method |
@@ -443,15 +484,23 @@ VolumeSeriesTest
 │   ├── Chunk month partitioning (13 months)
 │   ├── Formula attachment test
 │   └── Fully materialized has no unmaterialized window
-└── CrossCuttingTests
-    ├── Energy invariant across granularities (MW_CAPACITY only)
-    ├── MWH_PER_PERIOD: energy equals volume regardless of interval duration
-    ├── MW_CAPACITY vs MWH_PER_PERIOD: different energy for same volume value
-    ├── TradeLegId: unique per leg, shared tradeId
-    ├── Interval count scaling (inverse with granularity)
-    ├── Bi-temporal timestamp validation
-    ├── MONTHLY granularity guard (throws UnsupportedOperationException)
-    └── DeliveryWindow validation (rejects end before start)
+├── CrossCuttingTests
+│   ├── Energy invariant across granularities (MW_CAPACITY only)
+│   ├── MWH_PER_PERIOD: energy equals volume regardless of interval duration
+│   ├── MW_CAPACITY vs MWH_PER_PERIOD: different energy for same volume value
+│   ├── TradeLegId: unique per leg, shared tradeId
+│   ├── Interval count scaling (inverse with granularity)
+│   ├── Bi-temporal timestamp validation
+│   ├── MONTHLY granularity guard (throws UnsupportedOperationException)
+│   └── DeliveryWindow validation (rejects end before start)
+└── CascadeMaterializationTests
+    ├── buildCascadeSeries produces three tiers with correct properties
+    ├── materializeMediumTermChunk generates daily intervals
+    ├── materializeLongTermChunk generates a monthly interval
+    ├── disaggregateMonthlyToDaily moves monthly → daily intervals (energy invariant)
+    ├── disaggregateDailyToBase moves daily → 15-min intervals (energy invariant)
+    ├── Daily intervals on DST days have correct energy (25h fall-back, 23h spring-forward)
+    └── Medium-term promotes to FULL when all chunks materialized
 ```
 
 ### 7.2 Scenario Details
@@ -586,8 +635,13 @@ The `VolumeSeriesService` (singleton, `com.quickysoft.power.volume.service`) pro
 - `buildPartialSeries(tradeId, tradeLegId, deliveryStart, deliveryEnd, granularity, volume, profileType, volumeUnit, zoneId, materializedThrough)`: Constructs a `VolumeSeries` with `materializationStatus = PARTIAL`, materializing only through the given `YearMonth`. Records the full delivery window (`deliveryStart` to `deliveryEnd`) and computes `totalExpectedIntervals` from the full range for progress tracking. Used by the Detail Generation Service for long-term PPAs with rolling-horizon materialization (Section 4.2).
 - `materializeChunk(series, chunkMonth, volume)`: Materializes a single monthly chunk and appends it to an existing PARTIAL series. Returns a new `VolumeSeries` record with updated intervals, `materializedThrough`, and `materializedIntervalCount`. Automatically promotes `materializationStatus` to `FULL` (with `materializedThrough = null`) when all expected intervals have been materialized. Chunk boundaries are clamped to the delivery window. Used by the monthly chunk processor (Section 4.3).
 - `calculateExpectedIntervals(start, end, granularity)` (static): Computes the expected interval count for a delivery window and granularity using ZonedDateTime arithmetic (DST-safe). Used by both `buildPartialSeries()` and `VolumeSeries.calculateExpectedIntervals()`.
-- `materializeIntervals(start, end, granularity, volume, volumeUnit)`: Walks the timeline and produces `VolumeInterval` records with calculated energy and chunk month assignment. Passes `volumeUnit` through to `calculateEnergy()`.
+- `materializeIntervals(start, end, granularity, volume, volumeUnit)`: Walks the timeline and produces `VolumeInterval` records with calculated energy and chunk month assignment. Dispatches to `materializeDailyIntervals()` for `DAILY` (using `ZonedDateTime.plusDays(1)` for DST safety) and `materializeMonthlyIntervals()` for `MONTHLY`.
 - `totalEnergy(series)`: Sums energy across all intervals in a series, rounded to scale 6.
+- `buildCascadeSeries(tradeId, tradeLegId, deliveryStart, deliveryEnd, baseGranularity, volume, profileType, volumeUnit, zoneId, weekEnd)`: Creates a three-tier cascade (Section 4.5). Returns a `CascadeResult(nearTerm, mediumTerm, longTerm)`. Near-term is FULL with intervals materialized at `baseGranularity`. Medium-term (DAILY) and long-term (MONTHLY) start as PENDING with empty interval lists.
+- `materializeMediumTermChunk(series, chunkMonth, volume)`: Generates daily intervals for a medium-term series chunk. Returns updated series with intervals appended. Promotes to FULL when all expected daily intervals are materialized.
+- `materializeLongTermChunk(series, chunkMonth, volume)`: Generates a single monthly interval for a long-term series chunk. Returns updated series. Promotes to FULL when all expected monthly intervals are materialized.
+- `disaggregateMonthlyToDaily(longTermSeries, mediumTermSeries, month, volume)`: Removes the monthly interval for `month` from long-term and generates equivalent daily intervals in medium-term. Returns `DisaggregationResult(source, target)`. Adjusts `totalExpectedIntervals` on both series.
+- `disaggregateDailyToBase(mediumTermSeries, nearTermSeries, fromDate, toDate, volume)`: Removes daily intervals in `[fromDate, toDate)` from medium-term and generates equivalent base-granularity intervals in near-term. Returns `DisaggregationResult(source, target)`. Adjusts `totalExpectedIntervals` on both series.
 
 ---
 
@@ -623,7 +677,7 @@ The model uses explicit getters/setters instead of Lombok annotations. This is a
 
 ### 9.1 Cross-Granularity Position Aggregation
 
-When a portfolio contains both DA 15-min trades and monthly PPA blocks, the Position Service needs to aggregate across granularities. This requires disaggregating coarse intervals (monthly → daily → hourly → 15-min) using the `VolumeFormula` and `TradingCalendar`. This logic belongs in the Position Service, not the volume series model.
+When a portfolio contains both DA 15-min trades and monthly PPA blocks, the Position Service needs to aggregate across granularities. The granularity cascade (Section 4.5) provides disaggregation methods (`disaggregateMonthlyToDaily`, `disaggregateDailyToBase`) in `VolumeSeriesService` that handle the volume series layer. The Position Service orchestrates when disaggregation occurs (e.g., weekly cron, on-demand) and coordinates updates across the three tier series.
 
 ### 9.2 Amendment Impact Analysis
 
