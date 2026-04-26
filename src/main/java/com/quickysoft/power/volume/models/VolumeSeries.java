@@ -21,41 +21,31 @@ import java.util.UUID;
  *   <li>Long-term (PPA): rolling horizon M+1 to M+3, status=PARTIAL,
  *       with monthly cron extending the window</li>
  * </ul>
+ * <p>
+ * Immutable once created. Amendments create a new trade version
+ * with a new VolumeSeries, not in-place edits. The intervals list
+ * can be mutated by manipulating its contents directly.
  */
-public class VolumeSeries {
-
-    private UUID id;
-    private UUID tradeId;
-    private UUID tradeLegId;
-    private int tradeVersion;
-
-    // ── Volume interpretation ──
-    private VolumeUnit volumeUnit;  // NEW: how to interpret volume on intervals
-
-    // ── Delivery window ──
-    private ZonedDateTime deliveryStart;
-    private ZonedDateTime deliveryEnd;
-    private ZoneId deliveryTimezone;       // e.g., Europe/Berlin
-    private TimeGranularity granularity;
-
-    // ── Profile metadata ──
-    private ProfileType profileType;
-
-    // ── Two-tier materialization tracking ──
-    private MaterializationStatus materializationStatus;
-    private YearMonth materializedThrough;  // null if FULL or PENDING
-    private int totalExpectedIntervals;
-    private int materializedIntervalCount;
-
-    // ── Bi-temporal ──
-    private Instant transactionTime;       // when system recorded this
-    private Instant validTime;             // when economically effective
-
-    // ── Materialized intervals (ordered by intervalStart) ──
-    private List<VolumeInterval> intervals;
-
-    // ── The recipe (for unmaterialized far-dated portion) ──
-    private VolumeFormula formula;
+public record VolumeSeries(
+        UUID id,
+        String tradeId,
+        String tradeLegId,
+        int tradeVersion,
+        VolumeUnit volumeUnit,
+        ZonedDateTime deliveryStart,
+        ZonedDateTime deliveryEnd,
+        ZoneId deliveryTimezone,
+        TimeGranularity granularity,
+        ProfileType profileType,
+        MaterializationStatus materializationStatus,
+        YearMonth materializedThrough,
+        int totalExpectedIntervals,
+        int materializedIntervalCount,
+        Instant transactionTime,
+        Instant validTime,
+        List<VolumeInterval> intervals,
+        VolumeFormula formula
+) {
 
     /**
      * Calculate expected interval count for the full delivery period.
@@ -100,149 +90,13 @@ public class VolumeSeries {
         return new DeliveryWindow(unmaterializedStart, deliveryEnd);
     }
 
-    // ── Getters and Setters ──
-
-    public VolumeUnit getVolumeUnit() {
-        return volumeUnit;
-    }
-
-    public void setVolumeUnit(VolumeUnit volumeUnit) {
-        this.volumeUnit = volumeUnit;
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public void setId(UUID id) {
-        this.id = id;
-    }
-
-    public UUID getTradeId() {
-        return tradeId;
-    }
-
-    public void setTradeId(UUID tradeId) {
-        this.tradeId = tradeId;
-    }
-
-    public UUID getTradeLegId() {
-        return tradeLegId;
-    }
-
-    public void setTradeLegId(UUID tradeLegId) {
-        this.tradeLegId = tradeLegId;
-    }
-
-    public int getTradeVersion() {
-        return tradeVersion;
-    }
-
-    public void setTradeVersion(int tradeVersion) {
-        this.tradeVersion = tradeVersion;
-    }
-
-    public ZonedDateTime getDeliveryStart() {
-        return deliveryStart;
-    }
-
-    public void setDeliveryStart(ZonedDateTime deliveryStart) {
-        this.deliveryStart = deliveryStart;
-    }
-
-    public ZonedDateTime getDeliveryEnd() {
-        return deliveryEnd;
-    }
-
-    public void setDeliveryEnd(ZonedDateTime deliveryEnd) {
-        this.deliveryEnd = deliveryEnd;
-    }
-
-    public ZoneId getDeliveryTimezone() {
-        return deliveryTimezone;
-    }
-
-    public void setDeliveryTimezone(ZoneId deliveryTimezone) {
-        this.deliveryTimezone = deliveryTimezone;
-    }
-
-    public TimeGranularity getGranularity() {
-        return granularity;
-    }
-
-    public void setGranularity(TimeGranularity granularity) {
-        this.granularity = granularity;
-    }
-
-    public ProfileType getProfileType() {
-        return profileType;
-    }
-
-    public void setProfileType(ProfileType profileType) {
-        this.profileType = profileType;
-    }
-
-    public MaterializationStatus getMaterializationStatus() {
-        return materializationStatus;
-    }
-
-    public void setMaterializationStatus(MaterializationStatus materializationStatus) {
-        this.materializationStatus = materializationStatus;
-    }
-
-    public YearMonth getMaterializedThrough() {
-        return materializedThrough;
-    }
-
-    public void setMaterializedThrough(YearMonth materializedThrough) {
-        this.materializedThrough = materializedThrough;
-    }
-
-    public int getTotalExpectedIntervals() {
-        return totalExpectedIntervals;
-    }
-
-    public void setTotalExpectedIntervals(int totalExpectedIntervals) {
-        this.totalExpectedIntervals = totalExpectedIntervals;
-    }
-
-    public int getMaterializedIntervalCount() {
-        return materializedIntervalCount;
-    }
-
-    public void setMaterializedIntervalCount(int materializedIntervalCount) {
-        this.materializedIntervalCount = materializedIntervalCount;
-    }
-
-    public Instant getTransactionTime() {
-        return transactionTime;
-    }
-
-    public void setTransactionTime(Instant transactionTime) {
-        this.transactionTime = transactionTime;
-    }
-
-    public Instant getValidTime() {
-        return validTime;
-    }
-
-    public void setValidTime(Instant validTime) {
-        this.validTime = validTime;
-    }
-
-    public List<VolumeInterval> getIntervals() {
-        return intervals;
-    }
-
-    public void setIntervals(List<VolumeInterval> intervals) {
-        this.intervals = intervals;
-    }
-
-    public VolumeFormula getFormula() {
-        return formula;
-    }
-
-    public void setFormula(VolumeFormula formula) {
-        this.formula = formula;
+    /**
+     * Returns a new VolumeSeries with the given formula attached.
+     */
+    public VolumeSeries withFormula(VolumeFormula formula) {
+        return new VolumeSeries(id, tradeId, tradeLegId, tradeVersion, volumeUnit,
+                deliveryStart, deliveryEnd, deliveryTimezone, granularity, profileType,
+                materializationStatus, materializedThrough, totalExpectedIntervals,
+                materializedIntervalCount, transactionTime, validTime, intervals, formula);
     }
 }

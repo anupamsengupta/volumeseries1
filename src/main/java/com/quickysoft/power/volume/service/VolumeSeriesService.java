@@ -25,6 +25,8 @@ public class VolumeSeriesService {
     }
 
     public VolumeSeries buildSeries(
+            String tradeId,
+            String tradeLegId,
             ZonedDateTime start,
             ZonedDateTime end,
             TimeGranularity granularity,
@@ -34,29 +36,15 @@ public class VolumeSeriesService {
             VolumeUnit volumeUnit,
             ZoneId zoneId) {
 
-        VolumeSeries series = new VolumeSeries();
-        series.setId(UUID.randomUUID());
-        series.setTradeId(UUID.randomUUID());
-        series.setTradeLegId(UUID.randomUUID());
-        series.setTradeVersion(1);
-        series.setDeliveryStart(start);
-        series.setDeliveryEnd(end);
-        series.setDeliveryTimezone(zoneId);
-        series.setGranularity(granularity);
-        series.setProfileType(profileType);
-        series.setMaterializationStatus(matStatus);
-        series.setTransactionTime(Instant.now());
-        series.setValidTime(Instant.now());
-
         List<VolumeInterval> intervals = materializeIntervals(
                 start, end, granularity, volume, volumeUnit);
-        series.setIntervals(intervals);
-
         int intervalCount = intervals.size();
-        series.setMaterializedIntervalCount(intervalCount);
-        series.setTotalExpectedIntervals(intervalCount);
 
-        return series;
+        return new VolumeSeries(
+                UUID.randomUUID(), tradeId, tradeLegId, 1,
+                volumeUnit, start, end, zoneId, granularity, profileType,
+                matStatus, null, intervalCount, intervalCount,
+                Instant.now(), Instant.now(), intervals, null);
     }
 
     public List<VolumeInterval> materializeIntervals(
@@ -160,7 +148,7 @@ public class VolumeSeriesService {
     }
 
     public BigDecimal totalEnergy(VolumeSeries series) {
-        BigDecimal result = series.getIntervals().stream()
+        BigDecimal result = series.intervals().stream()
                 .map(VolumeInterval::energy)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         result = result.setScale(6, RoundingMode.HALF_UP);

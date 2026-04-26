@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.*;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -59,28 +58,32 @@ class VolumeSeriesTest {
         @DisplayName("Should produce exactly 1 interval")
         void shouldProduceOneInterval() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK,
                     MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            assertEquals(1, series.getIntervals().size());
-            assertEquals(1, series.getTotalExpectedIntervals());
-            assertEquals(1, series.getMaterializedIntervalCount());
+            assertEquals(1, series.intervals().size());
+            assertEquals(1, series.totalExpectedIntervals());
+            assertEquals(1, series.materializedIntervalCount());
         }
 
         @Test
         @DisplayName("Interval boundaries should be 17:45 - 18:00 CET")
         void shouldHaveCorrectBoundaries() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK,
                     MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            VolumeInterval interval = series.getIntervals().get(0);
+            VolumeInterval interval = series.intervals().get(0);
             assertEquals(LocalTime.of(17, 45), interval.intervalStart().toLocalTime());
             assertEquals(LocalTime.of(18, 0), interval.intervalEnd().toLocalTime());
         }
@@ -89,6 +92,8 @@ class VolumeSeriesTest {
         @DisplayName("Energy should be 15 MW x 1h = 15 MWh")
         void shouldCalculateCorrectEnergyPerPeriod() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW,
                     ProfileType.BLOCK,
@@ -96,7 +101,7 @@ class VolumeSeriesTest {
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            VolumeInterval interval = series.getIntervals().get(0);
+            VolumeInterval interval = series.intervals().get(0);
             assertEquals(VOLUME_MW, interval.volume());
             assertEquals(VOLUME_MW, interval.energy());
         }
@@ -105,6 +110,8 @@ class VolumeSeriesTest {
         @DisplayName("Energy should be 15 MW x .25h = 3.75 MWh")
         void shouldCalculateCorrectEnergyHourlyBasis() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW,
                     ProfileType.BLOCK,
@@ -112,7 +119,7 @@ class VolumeSeriesTest {
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
-            VolumeInterval interval = series.getIntervals().get(0);
+            VolumeInterval interval = series.intervals().get(0);
             assertEquals(VOLUME_MW, interval.volume());
             assertEquals(0, new BigDecimal("3.750000")
                     .compareTo(interval.energy()));
@@ -122,6 +129,8 @@ class VolumeSeriesTest {
         @DisplayName("Status should be FULL materialization with CONFIRMED intervals")
         void shouldBeFullyMaterialized() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end,
                     TimeGranularity.MIN_15,
                     VOLUME_MW,
@@ -130,8 +139,8 @@ class VolumeSeriesTest {
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            assertEquals(MaterializationStatus.FULL, series.getMaterializationStatus());
-            assertEquals(IntervalStatus.CONFIRMED, series.getIntervals().get(0).status());
+            assertEquals(MaterializationStatus.FULL, series.materializationStatus());
+            assertEquals(IntervalStatus.CONFIRMED, series.intervals().get(0).status());
             assertNull(series.getUnmaterializedWindow(),
                     "Fully materialized series should have no unmaterialized window");
         }
@@ -154,6 +163,8 @@ class VolumeSeriesTest {
         @DisplayName("Should produce exactly 4 intervals")
         void shouldProduceFourIntervals() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW,
                     ProfileType.BLOCK,
@@ -161,20 +172,22 @@ class VolumeSeriesTest {
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            assertEquals(4, series.getIntervals().size());
-            assertEquals(4, series.getTotalExpectedIntervals());
+            assertEquals(4, series.intervals().size());
+            assertEquals(4, series.totalExpectedIntervals());
         }
 
         @Test
         @DisplayName("Intervals should be contiguous and non-overlapping")
         void intervalsShouldBeContiguous() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            List<VolumeInterval> intervals = series.getIntervals();
+            List<VolumeInterval> intervals = series.intervals();
             for (int i = 0; i < intervals.size() - 1; i++) {
                 assertEquals(intervals.get(i).intervalEnd(),
                         intervals.get(i + 1).intervalStart(),
@@ -188,6 +201,8 @@ class VolumeSeriesTest {
         @DisplayName("Interval start times should be 17:00, 17:15, 17:30, 17:45")
         void shouldHaveCorrectStartTimes() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
@@ -199,7 +214,7 @@ class VolumeSeriesTest {
                     LocalTime.of(17, 30),
                     LocalTime.of(17, 45));
 
-            List<LocalTime> actualStarts = series.getIntervals().stream()
+            List<LocalTime> actualStarts = series.intervals().stream()
                     .map(i -> i.intervalStart().toLocalTime())
                     .toList();
 
@@ -210,12 +225,14 @@ class VolumeSeriesTest {
         @DisplayName("Each interval energy = 3.75 MWh, total = 15 MWh")
         void shouldCalculateCorrectTotalEnergy() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
-            series.getIntervals().forEach(interval ->
+            series.intervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("3.750000")
                             .compareTo(interval.energy()),
                             "Each interval should be 3.75 MWh"));
@@ -229,12 +246,14 @@ class VolumeSeriesTest {
         @DisplayName("All intervals should belong to the same chunk month")
         void allIntervalsSameChunkMonth() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            series.getIntervals().forEach(interval ->
+            series.intervals().forEach(interval ->
                     assertEquals(YearMonth.of(2026, 4), interval.chunkMonth()));
         }
     }
@@ -256,25 +275,29 @@ class VolumeSeriesTest {
         @DisplayName("Should produce exactly 3 intervals")
         void shouldProduceThreeIntervals() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            assertEquals(3, series.getIntervals().size());
-            assertEquals(3, series.getTotalExpectedIntervals());
+            assertEquals(3, series.intervals().size());
+            assertEquals(3, series.totalExpectedIntervals());
         }
 
         @Test
         @DisplayName("Interval boundaries: 17:00-17:30, 17:30-18:00, 18:00-18:30")
         void shouldHaveCorrectBoundaries() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            List<VolumeInterval> intervals = series.getIntervals();
+            List<VolumeInterval> intervals = series.intervals();
 
             assertEquals(LocalTime.of(17, 0), intervals.get(0).intervalStart().toLocalTime());
             assertEquals(LocalTime.of(17, 30), intervals.get(0).intervalEnd().toLocalTime());
@@ -290,12 +313,14 @@ class VolumeSeriesTest {
         @DisplayName("Each interval energy = 7.50 MWh, total = 22.50 MWh")
         void shouldCalculateCorrectEnergyPerHour() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
-            series.getIntervals().forEach(interval ->
+            series.intervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("7.500000")
                             .compareTo(interval.energy())));
 
@@ -308,12 +333,14 @@ class VolumeSeriesTest {
         @DisplayName("Each interval energy = 15 MWh, total = 45 MWh")
         void shouldCalculateCorrectEnergyPerPeriod() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            series.getIntervals().forEach(interval ->
+            series.intervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("15")
                             .compareTo(interval.energy())));
 
@@ -340,25 +367,31 @@ class VolumeSeriesTest {
         @DisplayName("Should produce exactly 2 intervals")
         void shouldProduceTwoIntervals() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            assertEquals(2, series.getIntervals().size());
-            assertEquals(2, series.getTotalExpectedIntervals());
+            assertEquals(2, series.intervals().size());
+            assertEquals(2, series.totalExpectedIntervals());
         }
 
         @Test
         @DisplayName("Total energy should match: 15 MW x 1h = 15 MWh (same as Scenario 2)")
         void  totalEnergyShouldMatchHourlyEquivalent() {
             VolumeSeries series30 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
             VolumeSeries series15 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
@@ -380,12 +413,14 @@ class VolumeSeriesTest {
         @DisplayName("Each interval should be 7.50 MWh")
         void eachIntervalCorrectEnergy() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BLOCK, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
-            series.getIntervals().forEach(interval ->
+            series.intervals().forEach(interval ->
                     assertEquals(0, new BigDecimal("7.500000")
                             .compareTo(interval.energy())));
         }
@@ -409,13 +444,15 @@ class VolumeSeriesTest {
         @DisplayName("Full materialization should produce ~35,040 intervals (365 days x 96)")
         void shouldProduceCorrectIntervalCount() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
             int expected = series.calculateExpectedIntervals();
-            assertEquals(expected, series.getIntervals().size());
+            assertEquals(expected, series.intervals().size());
 
             // 365 days x 96 intervals/day = 35,040 baseline
             // DST spring-forward (Mar 2027): -4 intervals
@@ -429,12 +466,14 @@ class VolumeSeriesTest {
         @DisplayName("All intervals should be contiguous with no gaps")
         void shouldBeContiguous() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            List<VolumeInterval> intervals = series.getIntervals();
+            List<VolumeInterval> intervals = series.intervals();
             assertEquals(start, intervals.get(0).intervalStart());
             assertEquals(end, intervals.get(intervals.size() - 1).intervalEnd());
 
@@ -449,6 +488,8 @@ class VolumeSeriesTest {
         @DisplayName("Total energy should be ~15 MW x 8760h = 131,400 MWh (within DST tolerance)")
         void shouldCalculateCorrectAnnualEnergy() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
@@ -471,12 +512,14 @@ class VolumeSeriesTest {
                     ZonedDateTime.of(2026, 10, 26, 0, 0, 0, 0, DELIVERY_TZ);
 
             VolumeSeries dstDaySeries = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     dstDayStart, dstDayEnd, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
-            assertEquals(100, dstDaySeries.getIntervals().size(),
+            assertEquals(100, dstDaySeries.intervals().size(),
                     "DST fall-back day should have 100 fifteen-minute intervals (25 hours)");
 
             BigDecimal dstEnergy =  volumeSeriesService.totalEnergy(dstDaySeries);
@@ -494,12 +537,14 @@ class VolumeSeriesTest {
                     ZonedDateTime.of(2027, 3, 29, 0, 0, 0, 0, DELIVERY_TZ);
 
             VolumeSeries dstDaySeries = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     dstDayStart, dstDayEnd, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
-            assertEquals(92, dstDaySeries.getIntervals().size(),
+            assertEquals(92, dstDaySeries.intervals().size(),
                     "DST spring-forward day should have 92 fifteen-minute intervals (23 hours)");
 
             BigDecimal dstEnergy =  volumeSeriesService.totalEnergy(dstDaySeries);
@@ -517,24 +562,31 @@ class VolumeSeriesTest {
             ZonedDateTime matEnd = matThrough.plusMonths(1)
                     .atDay(1).atStartOfDay(DELIVERY_TZ);
 
-            VolumeSeries series = volumeSeriesService.buildSeries(
+            // Materialize only the partial window
+            List<VolumeInterval> partialIntervals = volumeSeriesService.materializeIntervals(
                     start, matEnd, TimeGranularity.MIN_15,
-                    VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.PARTIAL,
-                    VolumeUnit.MWH_PER_PERIOD,
-                    DELIVERY_TZ);
+                    VOLUME_MW, VolumeUnit.MWH_PER_PERIOD);
 
-            series.setMaterializedThrough(matThrough);
-            series.setDeliveryEnd(end);
-            series.setTotalExpectedIntervals(
-                    volumeSeriesService.buildSeries(start, end, TimeGranularity.MIN_15,
-                            VOLUME_MW, ProfileType.BASELOAD,
-                            MaterializationStatus.FULL,
-                            VolumeUnit.MWH_PER_PERIOD,
-                            DELIVERY_TZ)
-                            .calculateExpectedIntervals());
+            // Calculate total expected for the full delivery window
+            int totalExpected = volumeSeriesService.buildSeries(
+                            UUID.randomUUID().toString(),
+                            UUID.randomUUID().toString(),
+                    start, end, TimeGranularity.MIN_15,
+                    VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
+                    VolumeUnit.MWH_PER_PERIOD, DELIVERY_TZ)
+                    .calculateExpectedIntervals();
 
-            assertTrue(series.getMaterializedIntervalCount()
-                            < series.getTotalExpectedIntervals(),
+            // Construct partial series with full delivery window but limited intervals
+            VolumeSeries series = new VolumeSeries(
+                    UUID.randomUUID(), UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1,
+                    VolumeUnit.MWH_PER_PERIOD, start, end, DELIVERY_TZ,
+                    TimeGranularity.MIN_15, ProfileType.BASELOAD,
+                    MaterializationStatus.PARTIAL, matThrough,
+                    totalExpected, partialIntervals.size(),
+                    Instant.now(), Instant.now(), partialIntervals, null);
+
+            assertTrue(series.materializedIntervalCount()
+                            < series.totalExpectedIntervals(),
                     "Partial materialization should have fewer intervals than full");
 
             DeliveryWindow unmaterialized = series.getUnmaterializedWindow();
@@ -548,12 +600,14 @@ class VolumeSeriesTest {
         @DisplayName("Chunk months should correctly partition intervals across 13 months")
         void chunkMonthsShouldPartition() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            var byChunk = series.getIntervals().stream()
+            var byChunk = series.intervals().stream()
                     .collect(Collectors.groupingBy(
                             VolumeInterval::chunkMonth,
                             Collectors.counting()));
@@ -579,30 +633,35 @@ class VolumeSeriesTest {
         }
 
         @Test
-        @DisplayName("Formula should be set for PPA (recipe for future materialization)")
+        @DisplayName("Formula should be attachable to PPA (recipe for future materialization)")
         void shouldHaveFormulaForPPA() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.PARTIAL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
             VolumeFormula formula = new VolumeFormula(
-                    UUID.randomUUID(), series.getId(),
+                    UUID.randomUUID(), series.id(),
                     VOLUME_MW, new BigDecimal("12"), new BigDecimal("18"),
                     null, null, null, null, null);
-            series.setFormula(formula);
 
-            assertNotNull(series.getFormula());
-            assertEquals(VOLUME_MW, series.getFormula().baseVolume());
-            assertEquals(new BigDecimal("12"), series.getFormula().minVolume());
-            assertEquals(new BigDecimal("18"), series.getFormula().maxVolume());
+            VolumeSeries seriesWithFormula = series.withFormula(formula);
+
+            assertNotNull(seriesWithFormula.formula());
+            assertEquals(VOLUME_MW, seriesWithFormula.formula().baseVolume());
+            assertEquals(new BigDecimal("12"), seriesWithFormula.formula().minVolume());
+            assertEquals(new BigDecimal("18"), seriesWithFormula.formula().maxVolume());
         }
 
         @Test
         @DisplayName("Fully materialized series should have no unmaterialized window")
         void fullyMaterializedHasNoUnmaterializedWindow() {
             VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
                     start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
@@ -628,22 +687,34 @@ class VolumeSeriesTest {
         @Test
         @DisplayName("Total energy must be identical across all sub-hourly granularities for MW_CAPACITY")
         void energyInvariantAcrossGranularities() {
-            VolumeSeries series5 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series5 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_5, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
-            VolumeSeries series15 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series15 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
-            VolumeSeries series30 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series30 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_30, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
-            VolumeSeries series60 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series60 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.HOURLY, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
@@ -668,43 +739,58 @@ class VolumeSeriesTest {
         @Test
         @DisplayName("Interval count should scale inversely with granularity")
         void intervalCountScalesWithGranularity() {
-            assertEquals(12, volumeSeriesService.buildSeries(start, end, TimeGranularity.MIN_5,
+            assertEquals(12, volumeSeriesService.buildSeries(
+                            UUID.randomUUID().toString(),
+                            UUID.randomUUID().toString(),
+                    start, end, TimeGranularity.MIN_5,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                             DELIVERY_TZ)
-                    .getIntervals().size(), "5-min: 12 intervals");
+                    .intervals().size(), "5-min: 12 intervals");
 
-            assertEquals(4, volumeSeriesService.buildSeries(start, end, TimeGranularity.MIN_15,
+            assertEquals(4, volumeSeriesService.buildSeries(
+                            UUID.randomUUID().toString(),
+                            UUID.randomUUID().toString(),
+                    start, end, TimeGranularity.MIN_15,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                             DELIVERY_TZ)
-                    .getIntervals().size(), "15-min: 4 intervals");
+                    .intervals().size(), "15-min: 4 intervals");
 
-            assertEquals(2, volumeSeriesService.buildSeries(start, end, TimeGranularity.MIN_30,
+            assertEquals(2, volumeSeriesService.buildSeries(
+                            UUID.randomUUID().toString(),
+                            UUID.randomUUID().toString(),
+                            start, end, TimeGranularity.MIN_30,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                             DELIVERY_TZ)
-                    .getIntervals().size(), "30-min: 2 intervals");
+                    .intervals().size(), "30-min: 2 intervals");
 
-            assertEquals(1, volumeSeriesService.buildSeries(start, end, TimeGranularity.HOURLY,
+            assertEquals(1, volumeSeriesService.buildSeries(
+                            UUID.randomUUID().toString(),
+                            UUID.randomUUID().toString(),
+                    start, end, TimeGranularity.HOURLY,
                     VOLUME_MW, ProfileType.BASELOAD, MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                             DELIVERY_TZ)
-                    .getIntervals().size(), "Hourly: 1 interval");
+                    .intervals().size(), "Hourly: 1 interval");
         }
 
         @Test
         @DisplayName("Bi-temporal timestamps should be set")
         void biTemporalTimestampsShouldBeSet() {
-            VolumeSeries series = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            assertNotNull(series.getTransactionTime(),
+            assertNotNull(series.transactionTime(),
                     "Transaction time must be set");
-            assertNotNull(series.getValidTime(),
+            assertNotNull(series.validTime(),
                     "Valid time must be set");
         }
 
@@ -712,13 +798,16 @@ class VolumeSeriesTest {
         @DisplayName("MWH_PER_PERIOD: energy equals volume regardless of interval duration")
         void mwhPerPeriodEnergyEqualsVolume() {
             // 15-min intervals: 4 intervals, each energy = 15 MWh, total = 60 MWh
-            VolumeSeries series15 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series15 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            for (VolumeInterval iv : series15.getIntervals()) {
+            for (VolumeInterval iv : series15.intervals()) {
                 assertEquals(0, VOLUME_MW.compareTo(iv.energy()),
                         "MWH_PER_PERIOD: each interval energy must equal volume");
             }
@@ -727,13 +816,16 @@ class VolumeSeriesTest {
                     "MWH_PER_PERIOD 15-min: total energy = 4 × 15 = 60 MWh");
 
             // 30-min intervals: 2 intervals, each energy = 15 MWh, total = 30 MWh
-            VolumeSeries series30 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries series30 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_30, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            for (VolumeInterval iv : series30.getIntervals()) {
+            for (VolumeInterval iv : series30.intervals()) {
                 assertEquals(0, VOLUME_MW.compareTo(iv.energy()),
                         "MWH_PER_PERIOD: each interval energy must equal volume");
             }
@@ -745,19 +837,25 @@ class VolumeSeriesTest {
         @Test
         @DisplayName("MW_CAPACITY vs MWH_PER_PERIOD: different energy for same volume value")
         void mwCapacityVsMwhPerPeriodComparison() {
-            VolumeSeries mwSeries = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries mwSeries = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
-            VolumeSeries mwhSeries = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries mwhSeries = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MWH_PER_PERIOD,
                     DELIVERY_TZ);
 
-            BigDecimal mwIntervalEnergy = mwSeries.getIntervals().get(0).energy();
-            BigDecimal mwhIntervalEnergy = mwhSeries.getIntervals().get(0).energy();
+            BigDecimal mwIntervalEnergy = mwSeries.intervals().get(0).energy();
+            BigDecimal mwhIntervalEnergy = mwhSeries.intervals().get(0).energy();
 
             // MW_CAPACITY: 15 MW × 0.25h = 3.75 MWh per 15-min interval
             assertEquals(0, new BigDecimal("3.750000").compareTo(mwIntervalEnergy),
@@ -773,25 +871,31 @@ class VolumeSeriesTest {
         @Test
         @DisplayName("TradeLegId: unique per leg, shared tradeId")
         void tradeLegIdUniqueness() {
-            VolumeSeries leg1 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries leg1 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
-            VolumeSeries leg2 = volumeSeriesService.buildSeries(start, end,
+            VolumeSeries leg2 = volumeSeriesService.buildSeries(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    start, end,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
                     MaterializationStatus.FULL,
                     VolumeUnit.MW_CAPACITY,
                     DELIVERY_TZ);
 
             // Both legs must have non-null IDs
-            assertNotNull(leg1.getTradeId(), "Leg 1 tradeId must not be null");
-            assertNotNull(leg1.getTradeLegId(), "Leg 1 tradeLegId must not be null");
-            assertNotNull(leg2.getTradeId(), "Leg 2 tradeId must not be null");
-            assertNotNull(leg2.getTradeLegId(), "Leg 2 tradeLegId must not be null");
+            assertNotNull(leg1.tradeId(), "Leg 1 tradeId must not be null");
+            assertNotNull(leg1.tradeLegId(), "Leg 1 tradeLegId must not be null");
+            assertNotNull(leg2.tradeId(), "Leg 2 tradeId must not be null");
+            assertNotNull(leg2.tradeLegId(), "Leg 2 tradeLegId must not be null");
 
             // Different series have distinct tradeLegIds
-            assertNotEquals(leg1.getTradeLegId(), leg2.getTradeLegId(),
+            assertNotEquals(leg1.tradeLegId(), leg2.tradeLegId(),
                     "Two legs must have distinct tradeLegId values");
         }
 
