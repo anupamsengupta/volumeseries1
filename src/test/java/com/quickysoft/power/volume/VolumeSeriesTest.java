@@ -709,6 +709,93 @@ class VolumeSeriesTest {
         }
 
         @Test
+        @DisplayName("MWH_PER_PERIOD: energy equals volume regardless of interval duration")
+        void mwhPerPeriodEnergyEqualsVolume() {
+            // 15-min intervals: 4 intervals, each energy = 15 MWh, total = 60 MWh
+            VolumeSeries series15 = volumeSeriesService.buildSeries(start, end,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ);
+
+            for (VolumeInterval iv : series15.getIntervals()) {
+                assertEquals(0, VOLUME_MW.compareTo(iv.energy()),
+                        "MWH_PER_PERIOD: each interval energy must equal volume");
+            }
+            assertEquals(0, new BigDecimal("60").compareTo(
+                    volumeSeriesService.totalEnergy(series15)),
+                    "MWH_PER_PERIOD 15-min: total energy = 4 × 15 = 60 MWh");
+
+            // 30-min intervals: 2 intervals, each energy = 15 MWh, total = 30 MWh
+            VolumeSeries series30 = volumeSeriesService.buildSeries(start, end,
+                    TimeGranularity.MIN_30, VOLUME_MW, ProfileType.BASELOAD,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ);
+
+            for (VolumeInterval iv : series30.getIntervals()) {
+                assertEquals(0, VOLUME_MW.compareTo(iv.energy()),
+                        "MWH_PER_PERIOD: each interval energy must equal volume");
+            }
+            assertEquals(0, new BigDecimal("30").compareTo(
+                    volumeSeriesService.totalEnergy(series30)),
+                    "MWH_PER_PERIOD 30-min: total energy = 2 × 15 = 30 MWh");
+        }
+
+        @Test
+        @DisplayName("MW_CAPACITY vs MWH_PER_PERIOD: different energy for same volume value")
+        void mwCapacityVsMwhPerPeriodComparison() {
+            VolumeSeries mwSeries = volumeSeriesService.buildSeries(start, end,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MW_CAPACITY,
+                    DELIVERY_TZ);
+            VolumeSeries mwhSeries = volumeSeriesService.buildSeries(start, end,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MWH_PER_PERIOD,
+                    DELIVERY_TZ);
+
+            BigDecimal mwIntervalEnergy = mwSeries.getIntervals().get(0).energy();
+            BigDecimal mwhIntervalEnergy = mwhSeries.getIntervals().get(0).energy();
+
+            // MW_CAPACITY: 15 MW × 0.25h = 3.75 MWh per 15-min interval
+            assertEquals(0, new BigDecimal("3.750000").compareTo(mwIntervalEnergy),
+                    "MW_CAPACITY 15-min interval energy should be 3.75 MWh");
+            // MWH_PER_PERIOD: energy = volume = 15 MWh per interval
+            assertEquals(0, new BigDecimal("15").compareTo(mwhIntervalEnergy),
+                    "MWH_PER_PERIOD 15-min interval energy should be 15 MWh");
+
+            assertNotEquals(0, mwIntervalEnergy.compareTo(mwhIntervalEnergy),
+                    "MW_CAPACITY and MWH_PER_PERIOD must produce different per-interval energy");
+        }
+
+        @Test
+        @DisplayName("TradeLegId: unique per leg, shared tradeId")
+        void tradeLegIdUniqueness() {
+            VolumeSeries leg1 = volumeSeriesService.buildSeries(start, end,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MW_CAPACITY,
+                    DELIVERY_TZ);
+            VolumeSeries leg2 = volumeSeriesService.buildSeries(start, end,
+                    TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
+                    MaterializationStatus.FULL,
+                    VolumeUnit.MW_CAPACITY,
+                    DELIVERY_TZ);
+
+            // Both legs must have non-null IDs
+            assertNotNull(leg1.getTradeId(), "Leg 1 tradeId must not be null");
+            assertNotNull(leg1.getTradeLegId(), "Leg 1 tradeLegId must not be null");
+            assertNotNull(leg2.getTradeId(), "Leg 2 tradeId must not be null");
+            assertNotNull(leg2.getTradeLegId(), "Leg 2 tradeLegId must not be null");
+
+            // Different series have distinct tradeLegIds
+            assertNotEquals(leg1.getTradeLegId(), leg2.getTradeLegId(),
+                    "Two legs must have distinct tradeLegId values");
+        }
+
+        @Test
         @DisplayName("MONTHLY granularity should throw on getFixedDuration()")
         void monthlyGranularityShouldThrow() {
             assertThrows(UnsupportedOperationException.class,
