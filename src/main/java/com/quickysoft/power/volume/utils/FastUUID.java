@@ -1,4 +1,4 @@
-package com.quickysoft.power.volume.service;
+package com.quickysoft.power.volume.utils;
 
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;

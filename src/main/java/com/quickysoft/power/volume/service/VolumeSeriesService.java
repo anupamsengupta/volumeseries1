@@ -4,15 +4,11 @@ import com.quickysoft.power.volume.models.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.YearMonth;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.time.*;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
-import static com.quickysoft.power.volume.service.FastUUID.generate;
+import static com.quickysoft.power.volume.utils.FastUUID.generate;
 
 public class VolumeSeriesService {
 
@@ -322,11 +318,10 @@ public class VolumeSeriesService {
             BigDecimal volume,
             ProfileType profileType,
             VolumeUnit volumeUnit,
-            ZoneId zoneId,
-            LocalDate weekEnd) {
+            ZoneId zoneId) {
 
         Instant now = Instant.now();
-        ZonedDateTime weekEndZdt = weekEnd.atStartOfDay(zoneId);
+        ZonedDateTime weekEndZdt = deliveryStart.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
 
         // Near-term: deliveryStart → weekEnd at base granularity, fully materialized
         ZonedDateTime nearEnd = weekEndZdt.isAfter(deliveryEnd) ? deliveryEnd : weekEndZdt;
