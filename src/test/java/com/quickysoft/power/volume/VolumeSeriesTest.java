@@ -1,6 +1,7 @@
 package com.quickysoft.power.volume;
 
 import com.quickysoft.power.volume.models.*;
+import com.quickysoft.power.volume.models.enums.*;
 import com.quickysoft.power.volume.service.VolumeSeriesService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -1002,7 +1003,7 @@ class VolumeSeriesTest {
                     "TRADE-1", "LEG-1",
                     deliveryStart, deliveryEnd,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
-                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, WeekendOn.SUNDAY);
 
             // Near-term: Apr 24 → Apr 27 at MIN_15, FULL
             VolumeSeries near = result.nearTerm();
@@ -1061,7 +1062,7 @@ class VolumeSeriesTest {
                     "TRADE-1", "LEG-1",
                     deliveryStart, deliveryEnd,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
-                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, WeekendOn.SUNDAY);
 
             // Materialize May 2026 chunk (31 days)
             VolumeSeries updated = volumeSeriesService.materializeMediumTermChunk(
@@ -1092,7 +1093,7 @@ class VolumeSeriesTest {
                     "TRADE-1", "LEG-1",
                     deliveryStart, deliveryEnd,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
-                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, WeekendOn.SUNDAY);
 
             // Materialize Aug 2026 chunk
             VolumeSeries updated = volumeSeriesService.materializeLongTermChunk(
@@ -1121,7 +1122,7 @@ class VolumeSeriesTest {
                     "TRADE-1", "LEG-1",
                     deliveryStart, deliveryEnd,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
-                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, WeekendOn.SUNDAY);
 
             // First materialize Aug in long-term
             VolumeSeries longWithAug = volumeSeriesService.materializeLongTermChunk(
@@ -1180,7 +1181,7 @@ class VolumeSeriesTest {
                     "TRADE-1", "LEG-1",
                     deliveryStart, deliveryEnd,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
-                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, WeekendOn.SUNDAY);
 
             // Materialize May in medium-term (31 days of daily intervals)
             VolumeSeries mediumWithMay = volumeSeriesService.materializeMediumTermChunk(
@@ -1282,7 +1283,7 @@ class VolumeSeriesTest {
                     "TRADE-SHORT", "LEG-SHORT",
                     shortStart, shortEnd,
                     TimeGranularity.MIN_15, VOLUME_MW, ProfileType.BASELOAD,
-                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ);
+                    VolumeUnit.MW_CAPACITY, DELIVERY_TZ, WeekendOn.SUNDAY);
 
             VolumeSeries medium = cascade.mediumTerm();
             assertEquals(MaterializationStatus.PENDING, medium.materializationStatus());

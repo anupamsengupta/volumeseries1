@@ -1,6 +1,7 @@
 package com.quickysoft.power.volume.service;
 
 import com.quickysoft.power.volume.models.*;
+import com.quickysoft.power.volume.models.enums.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -307,7 +308,7 @@ public class VolumeSeriesService {
      *   <li>LONG_TERM: start of M+3 → deliveryEnd at MONTHLY, PENDING (no intervals yet)</li>
      * </ul>
      *
-     * @param weekEnd end of current week (exclusive), e.g. next Monday 00:00
+     * @param weekendOn which day is the weekend (SATURDAY → next Sunday, SUNDAY → next Monday)
      */
     public CascadeResult buildCascadeSeries(
             String tradeId,
@@ -318,10 +319,11 @@ public class VolumeSeriesService {
             BigDecimal volume,
             ProfileType profileType,
             VolumeUnit volumeUnit,
-            ZoneId zoneId) {
+            ZoneId zoneId,
+            WeekendOn weekendOn) {
 
         Instant now = Instant.now();
-        ZonedDateTime weekEndZdt = deliveryStart.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        ZonedDateTime weekEndZdt = deliveryStart.with(TemporalAdjusters.next(weekendOn.getNextWeekDay()));
 
         // Near-term: deliveryStart → weekEnd at base granularity, fully materialized
         ZonedDateTime nearEnd = weekEndZdt.isAfter(deliveryEnd) ? deliveryEnd : weekEndZdt;

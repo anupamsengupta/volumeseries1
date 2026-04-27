@@ -1,4 +1,4 @@
-package com.quickysoft.power.volume.models;
+package com.quickysoft.power.volume.models.enums;
 
 /**
  * Status of an individual delivery interval within a materialized volume series.

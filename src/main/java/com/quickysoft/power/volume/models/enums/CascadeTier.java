@@ -1,4 +1,6 @@
-package com.quickysoft.power.volume.models;
+package com.quickysoft.power.volume.models.enums;
+
+import com.quickysoft.power.volume.models.VolumeSeries;
 
 /**
  * Identifies which tier a {@link VolumeSeries} belongs to

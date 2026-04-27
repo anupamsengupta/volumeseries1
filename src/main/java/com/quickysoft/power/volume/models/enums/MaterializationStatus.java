@@ -1,4 +1,4 @@
-package com.quickysoft.power.volume.models;
+package com.quickysoft.power.volume.models.enums;
 
 /**
  * Tracks the materialization state of a volume series.

@@ -1,4 +1,4 @@
-package com.quickysoft.power.volume.models;
+package com.quickysoft.power.volume.models.enums;
 
 /**
  * Delivery profile types for EU physical power contracts.

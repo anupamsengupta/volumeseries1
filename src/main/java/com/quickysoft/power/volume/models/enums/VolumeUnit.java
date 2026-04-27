@@ -1,4 +1,4 @@
-package com.quickysoft.power.volume.models;
+package com.quickysoft.power.volume.models.enums;
 
 /**
  * Defines how the volume field on VolumeInterval is interpreted.

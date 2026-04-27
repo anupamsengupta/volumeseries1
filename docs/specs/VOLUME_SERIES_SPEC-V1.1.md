@@ -137,6 +137,15 @@ Identifies which tier a `VolumeSeries` belongs to in the multi-granularity casca
 
 A long-tenor PPA produces three series per trade leg, one per tier. As time progresses, coarse intervals are disaggregated into finer ones (LONG_TERM monthly → MEDIUM_TERM daily → NEAR_TERM base granularity). Non-cascade series have `cascadeTier = null`.
 
+#### 3.2.7 WeekendOn
+
+Determines the near-term/medium-term boundary in cascade materialization. The week-end date is auto-computed from `deliveryStart` using `TemporalAdjusters.next(weekendOn.getNextWeekDay())`.
+
+| Value | `getNextWeekDay()` | Meaning |
+|---|---|---|
+| `SATURDAY` | `DayOfWeek.SUNDAY` | Weekend is Saturday; near-term runs to next Sunday 00:00 |
+| `SUNDAY` | `DayOfWeek.MONDAY` | Weekend is Sunday; near-term runs to next Monday 00:00 |
+
 ### 3.3 Core Entities
 
 #### 3.3.1 VolumeSeries
@@ -321,8 +330,8 @@ For long-tenor PPAs (e.g., 10-year at 15-min granularity = ~3.5M intervals), a m
 
 | Tier | Window | Granularity | Status | `totalExpectedIntervals` |
 |---|---|---|---|---|
-| NEAR_TERM | Current week (delivery start → week end) | MIN_15 | FULL (upfront) | ~288 (3 days × 96) |
-| MEDIUM_TERM | Rest of month + M+1 + M+2 (week end → end of M+2) | DAILY | PENDING → PARTIAL → FULL | ~65 days |
+| NEAR_TERM | Current week (delivery start → next `WeekendOn` boundary) | MIN_15 | FULL (upfront) | ~288 (3 days × 96) |
+| MEDIUM_TERM | `WeekendOn` boundary → end of M+2 | DAILY | PENDING → PARTIAL → FULL | ~65 days |
 | LONG_TERM | M+3 to delivery end | MONTHLY | PENDING → PARTIAL → FULL | ~117 months |
 
 Each tier is a **separate `VolumeSeries`** sharing the same `tradeId`/`tradeLegId` but with a different `cascadeTier`, `granularity`, and delivery window. The `totalExpectedIntervals` counts at the tier's own granularity, not the base granularity.
@@ -637,7 +646,7 @@ The `VolumeSeriesService` (singleton, `com.quickysoft.power.volume.service`) pro
 - `calculateExpectedIntervals(start, end, granularity)` (static): Computes the expected interval count for a delivery window and granularity using ZonedDateTime arithmetic (DST-safe). Used by both `buildPartialSeries()` and `VolumeSeries.calculateExpectedIntervals()`.
 - `materializeIntervals(start, end, granularity, volume, volumeUnit)`: Walks the timeline and produces `VolumeInterval` records with calculated energy and chunk month assignment. Dispatches to `materializeDailyIntervals()` for `DAILY` (using `ZonedDateTime.plusDays(1)` for DST safety) and `materializeMonthlyIntervals()` for `MONTHLY`.
 - `totalEnergy(series)`: Sums energy across all intervals in a series, rounded to scale 6.
-- `buildCascadeSeries(tradeId, tradeLegId, deliveryStart, deliveryEnd, baseGranularity, volume, profileType, volumeUnit, zoneId, weekEnd)`: Creates a three-tier cascade (Section 4.5). Returns a `CascadeResult(nearTerm, mediumTerm, longTerm)`. Near-term is FULL with intervals materialized at `baseGranularity`. Medium-term (DAILY) and long-term (MONTHLY) start as PENDING with empty interval lists.
+- `buildCascadeSeries(tradeId, tradeLegId, deliveryStart, deliveryEnd, baseGranularity, volume, profileType, volumeUnit, zoneId, weekendOn)`: Creates a three-tier cascade (Section 4.5). The `weekendOn` parameter (`WeekendOn` enum: `SATURDAY` or `SUNDAY`) determines the near-term/medium-term boundary — the week-end date is auto-computed as `deliveryStart.with(TemporalAdjusters.next(weekendOn.getNextWeekDay()))`. Returns a `CascadeResult(nearTerm, mediumTerm, longTerm)`. Near-term is FULL with intervals materialized at `baseGranularity`. Medium-term (DAILY) and long-term (MONTHLY) start as PENDING with empty interval lists.
 - `materializeMediumTermChunk(series, chunkMonth, volume)`: Generates daily intervals for a medium-term series chunk. Returns updated series with intervals appended. Promotes to FULL when all expected daily intervals are materialized.
 - `materializeLongTermChunk(series, chunkMonth, volume)`: Generates a single monthly interval for a long-term series chunk. Returns updated series. Promotes to FULL when all expected monthly intervals are materialized.
 - `disaggregateMonthlyToDaily(longTermSeries, mediumTermSeries, month, volume)`: Removes the monthly interval for `month` from long-term and generates equivalent daily intervals in medium-term. Returns `DisaggregationResult(source, target)`. Adjusts `totalExpectedIntervals` on both series.

@@ -1,5 +1,8 @@
 package com.quickysoft.power.volume.models;
 
+import com.quickysoft.power.volume.models.enums.IntervalStatus;
+import com.quickysoft.power.volume.models.enums.VolumeUnit;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
